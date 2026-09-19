@@ -1,0 +1,12 @@
+{
+  "entity": {
+    "sensor": {
+      "version": { "default": "mdi:tag-outline" },
+      "features": { "default": "mdi:toggle-switch" },
+      "jobs": { "default": "mdi:clipboard-text-clock" },
+      "audit_log": { "default": "mdi:shield-search" },
+      "os_type": { "default": "mdi:linux" },
+      "herder": { "default": "mdi:heart-pulse" }
+    }
+  }
+}

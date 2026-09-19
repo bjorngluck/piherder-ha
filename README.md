@@ -4,7 +4,7 @@ HACS integration: Home Assistant **observes** a [PiHerder](https://github.com/bj
 
 This is **not** PiHerder managing HAOS over SSH. That stays in the PiHerder image ([HAOS hosts](https://piherder-docs.hacknow.info/day-to-day/haos-hosts/)).
 
-**Slice 1 (read-only):** config flow, fleet sensors, one HA device per PiHerder host, Open in PiHerder. Token scope **`read`**. Poll is database snapshots — never SSH the fleet.
+**Slice 1 (read-only):** config flow, fleet sensors (including herder **version**), one HA device per PiHerder host, enabled **features**, Jobs / Audit URLs, Open in PiHerder. Token scope **`read`**. Poll is database snapshots — never SSH the fleet.
 
 No start/stop, Move, Files, console, or OS apply from HA.
 

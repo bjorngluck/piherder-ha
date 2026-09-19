@@ -7,11 +7,12 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import PiHerderCoordinator
+from .helpers import device_model, feature_flags, features_label, fleet_urls, host_urls
 
 FLEET_SENSORS = (
     ("hosts", "Hosts", "mdi:server-network"),
@@ -24,22 +25,47 @@ FLEET_SENSORS = (
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coord: PiHerderCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[SensorEntity] = [
+    known: set[int] = set()
+
+    fleet: list[SensorEntity] = [
         PiHerderFleetSensor(coord, entry, key, name, icon) for key, name, icon in FLEET_SENSORS
     ]
-    entities.append(PiHerderMoveSensor(coord, entry))
-    entities.append(PiHerderHerderUpSensor(coord, entry))
-    seen = {int(s["id"]) for s in coord.data.get("servers") or [] if s.get("id") is not None}
-    for sid in seen:
-        entities.extend(
-            [
-                PiHerderHostOsSensor(coord, entry, sid),
-                PiHerderHostLastSeenSensor(coord, entry, sid),
-                PiHerderHostRebootSensor(coord, entry, sid),
-                PiHerderHostBackupSensor(coord, entry, sid),
-            ]
-        )
-    async_add_entities(entities)
+    fleet.extend(
+        [
+            PiHerderMoveSensor(coord, entry),
+            PiHerderHerderUpSensor(coord, entry),
+            PiHerderVersionSensor(coord, entry),
+            PiHerderLinkSensor(coord, entry, "jobs", "Jobs", "mdi:clipboard-text-clock"),
+            PiHerderLinkSensor(coord, entry, "audit", "Audit log", "mdi:shield-search"),
+        ]
+    )
+    async_add_entities(fleet)
+
+    def _host_bundle(sid: int) -> list[SensorEntity]:
+        return [
+            PiHerderHostOsSensor(coord, entry, sid),
+            PiHerderHostFeaturesSensor(coord, entry, sid),
+            PiHerderHostLastSeenSensor(coord, entry, sid),
+            PiHerderHostRebootSensor(coord, entry, sid),
+            PiHerderHostBackupSensor(coord, entry, sid),
+            PiHerderHostLinkSensor(coord, entry, sid, "jobs", "Jobs", "mdi:clipboard-text-clock"),
+            PiHerderHostLinkSensor(coord, entry, sid, "audit", "Audit log", "mdi:shield-search"),
+        ]
+
+    def _discover() -> None:
+        rows = (coord.data or {}).get("servers") or []
+        fresh = {int(s["id"]) for s in rows if s.get("id") is not None}
+        new_ids = fresh - known
+        if not new_ids:
+            return
+        entities: list[SensorEntity] = []
+        for sid in sorted(new_ids):
+            known.add(sid)
+            entities.extend(_host_bundle(sid))
+        async_add_entities(entities)
+
+    _discover()
+    entry.async_on_unload(coord.async_add_listener(_discover))
 
 
 def _host(coord: PiHerderCoordinator, server_id: int) -> dict[str, Any] | None:
@@ -51,15 +77,23 @@ def _host(coord: PiHerderCoordinator, server_id: int) -> dict[str, Any] | None:
 
 class _FleetBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
     _attr_has_entity_name = True
+    _attr_icon = "mdi:server-network"
 
     def __init__(self, coordinator: PiHerderCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
         self._entry = entry
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_fleet")},
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        summary = (self.coordinator.data or {}).get("summary") or {}
+        version = summary.get("version")
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._entry.entry_id}_fleet")},
             name="PiHerder fleet",
             manufacturer="PiHerder",
-            configuration_url=coordinator.origin,
+            model="Fleet",
+            sw_version=str(version) if version else None,
+            configuration_url=self.coordinator.origin,
         )
 
 
@@ -106,27 +140,69 @@ class PiHerderHerderUpSensor(_FleetBase):
         return "up" if health.get("ok") else "down"
 
 
+class PiHerderVersionSensor(_FleetBase):
+    _attr_name = "Version"
+    _attr_icon = "mdi:tag-outline"
+
+    def __init__(self, coordinator, entry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_version"
+
+    @property
+    def native_value(self):
+        summary = (self.coordinator.data or {}).get("summary") or {}
+        return summary.get("version")
+
+
+class PiHerderLinkSensor(_FleetBase):
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, entry, kind: str, name: str, icon: str) -> None:
+        super().__init__(coordinator, entry)
+        self._kind = kind
+        self._attr_name = name
+        self._attr_icon = icon
+        self._attr_unique_id = f"{entry.entry_id}_{kind}_url"
+
+    @property
+    def native_value(self):
+        urls = fleet_urls(self.coordinator.origin)
+        if self._kind == "jobs":
+            return urls["jobs_url"]
+        return urls["audit_url"]
+
+    @property
+    def extra_state_attributes(self):
+        urls = fleet_urls(self.coordinator.origin)
+        return {"url": self.native_value, **urls}
+
+
 class _HostBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
     _attr_has_entity_name = True
+    _attr_icon = "mdi:server"
 
     def __init__(self, coordinator: PiHerderCoordinator, entry: ConfigEntry, server_id: int) -> None:
         super().__init__(coordinator)
         self._entry = entry
         self._server_id = server_id
-        row = _host(coordinator, server_id) or {}
-        name = row.get("name") or f"Host {server_id}"
-        origin = coordinator.origin
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_host_{server_id}")},
-            name=name,
-            manufacturer="PiHerder",
-            model=str(row.get("os_type") or "host"),
-            configuration_url=f"{origin}/servers/{server_id}",
-            via_device=(DOMAIN, f"{entry.entry_id}_fleet"),
-        )
 
     def _row(self) -> dict[str, Any]:
         return _host(self.coordinator, self._server_id) or {}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        row = self._row()
+        name = row.get("name") or f"Host {self._server_id}"
+        urls = host_urls(self.coordinator.origin, self._server_id)
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._entry.entry_id}_host_{self._server_id}")},
+            name=name,
+            manufacturer="PiHerder",
+            model=device_model(row),
+            hw_version=str(row.get("os_type") or "host"),
+            configuration_url=urls["open_url"],
+            via_device=(DOMAIN, f"{self._entry.entry_id}_fleet"),
+        )
 
 
 class PiHerderHostOsSensor(_HostBase):
@@ -142,10 +218,30 @@ class PiHerderHostOsSensor(_HostBase):
         return self._row().get("os_type")
 
 
+class PiHerderHostFeaturesSensor(_HostBase):
+    _attr_name = "Features"
+    _attr_icon = "mdi:toggle-switch"
+
+    def __init__(self, coordinator, entry, server_id: int) -> None:
+        super().__init__(coordinator, entry, server_id)
+        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_features"
+
+    @property
+    def native_value(self):
+        return features_label(self._row())
+
+    @property
+    def extra_state_attributes(self):
+        flags = feature_flags(self._row())
+        urls = host_urls(self.coordinator.origin, self._server_id)
+        return {**flags, **urls}
+
+
 class PiHerderHostLastSeenSensor(_HostBase):
     _attr_name = "Last seen"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:clock-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, entry, server_id: int) -> None:
         super().__init__(coordinator, entry, server_id)
@@ -193,3 +289,25 @@ class PiHerderHostBackupSensor(_HostBase):
             return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
         except ValueError:
             return None
+
+
+class PiHerderHostLinkSensor(_HostBase):
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, entry, server_id: int, kind: str, name: str, icon: str) -> None:
+        super().__init__(coordinator, entry, server_id)
+        self._kind = kind
+        self._attr_name = name
+        self._attr_icon = icon
+        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_{kind}_url"
+
+    @property
+    def native_value(self):
+        urls = host_urls(self.coordinator.origin, self._server_id)
+        if self._kind == "jobs":
+            return urls["jobs_url"]
+        return urls["audit_url"]
+
+    @property
+    def extra_state_attributes(self):
+        return {"url": self.native_value}

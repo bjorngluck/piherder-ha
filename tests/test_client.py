@@ -39,3 +39,24 @@ def test_derive_summary_matches_herder_counts():
     assert out["jobs_running"] == 2
     assert out["move_running"] is True
     assert out["last_backup_oldest_at"] == "2026-09-01T02:00:00"
+
+
+def test_features_and_urls():
+    from pathlib import Path
+    import importlib.util
+
+    hp = Path(__file__).resolve().parents[1] / "custom_components" / "piherder" / "helpers.py"
+    spec = importlib.util.spec_from_file_location("piherder_helpers", hp)
+    h = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(h)
+    row = {"os_type": "debian", "features": {"backup": True, "os_patch": False, "docker": True}}
+    assert h.features_label(row) == "backup, Docker"
+    assert h.device_model(row) == "debian · backup, Docker"
+    assert h.feature_flags(row)["backup"] is True
+    assert h.feature_flags(row)["os_patch"] is False
+    urls = h.host_urls("https://ph.example", 12)
+    assert urls["jobs_url"] == "https://ph.example/jobs?server_id=12"
+    assert urls["audit_url"] == "https://ph.example/audit?server_id=12"
+    assert urls["open_url"] == "https://ph.example/servers/12"
+    assert h.features_label({"features": {}}) == "none"
