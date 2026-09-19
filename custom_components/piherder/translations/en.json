@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "PiHerder",
+        "description": "Token scope read only. IP allowlist the Home Assistant host.",
+        "data": {
+          "url": "PiHerder URL",
+          "token": "API token",
+          "verify_ssl": "Verify TLS",
+          "scan_interval": "Poll interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach PiHerder",
+      "invalid_auth": "Token rejected (need read; check allowlist)"
+    },
+    "abort": {
+      "already_configured": "This PiHerder URL is already configured"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "piherder",
+  "name": "PiHerder",
+  "codeowners": ["@bjorngluck"],
+  "config_flow": true,
+  "documentation": "https://piherder-docs.hacknow.info/integrations/home-assistant/",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/bjorngluck/piherder-ha/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
