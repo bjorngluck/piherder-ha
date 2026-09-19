@@ -1,7 +1,6 @@
 """Fleet and per-host sensors (Slice 1)."""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
@@ -12,7 +11,17 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import PiHerderCoordinator
-from .helpers import device_model, feature_flags, features_label, fleet_urls, host_urls
+from .helpers import (
+    alert_state,
+    backup_state,
+    device_model,
+    feature_flags,
+    features_label,
+    fleet_urls,
+    host_urls,
+    os_display,
+    parse_utc,
+)
 
 FLEET_SENSORS = (
     ("hosts", "Hosts", "mdi:server-network"),
@@ -20,6 +29,7 @@ FLEET_SENSORS = (
     ("container_updates", "Container updates", "mdi:docker"),
     ("reboot_pending", "Reboot pending", "mdi:restart-alert"),
     ("jobs_running", "Jobs running", "mdi:progress-clock"),
+    ("alerts_open", "Alerts", "mdi:alert"),
 )
 
 
@@ -45,6 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         return [
             PiHerderHostOsSensor(coord, entry, sid),
             PiHerderHostFeaturesSensor(coord, entry, sid),
+            PiHerderHostAlertSensor(coord, entry, sid),
             PiHerderHostLastSeenSensor(coord, entry, sid),
             PiHerderHostRebootSensor(coord, entry, sid),
             PiHerderHostBackupSensor(coord, entry, sid),
@@ -94,7 +105,7 @@ class _FleetBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
             model="Fleet",
             sw_version=str(version) if version else None,
             configuration_url=self.coordinator.origin,
-        )
+        )  # brand/icon.png (HA 2026.3+)
 
 
 class PiHerderFleetSensor(_FleetBase):
@@ -166,15 +177,13 @@ class PiHerderLinkSensor(_FleetBase):
 
     @property
     def native_value(self):
-        urls = fleet_urls(self.coordinator.origin)
-        if self._kind == "jobs":
-            return urls["jobs_url"]
-        return urls["audit_url"]
+        return "Open"
 
     @property
     def extra_state_attributes(self):
         urls = fleet_urls(self.coordinator.origin)
-        return {"url": self.native_value, **urls}
+        url = urls["jobs_url"] if self._kind == "jobs" else urls["audit_url"]
+        return {"url": url, **urls}
 
 
 class _HostBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
@@ -199,7 +208,6 @@ class _HostBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
             name=name,
             manufacturer="PiHerder",
             model=device_model(row),
-            hw_version=str(row.get("os_type") or "host"),
             configuration_url=urls["open_url"],
             via_device=(DOMAIN, f"{self._entry.entry_id}_fleet"),
         )
@@ -215,7 +223,7 @@ class PiHerderHostOsSensor(_HostBase):
 
     @property
     def native_value(self):
-        return self._row().get("os_type")
+        return os_display(self._row())
 
 
 class PiHerderHostFeaturesSensor(_HostBase):
@@ -252,10 +260,35 @@ class PiHerderHostLastSeenSensor(_HostBase):
         raw = self._row().get("last_seen")
         if not raw:
             return None
-        try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        except ValueError:
-            return None
+        return parse_utc(raw)
+
+
+class PiHerderHostAlertSensor(_HostBase):
+    _attr_name = "Alert"
+    _attr_icon = "mdi:alert"
+
+    def __init__(self, coordinator, entry, server_id: int) -> None:
+        super().__init__(coordinator, entry, server_id)
+        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_alert"
+
+    @property
+    def native_value(self):
+        return alert_state(self._row())
+
+    @property
+    def extra_state_attributes(self):
+        row = self._row()
+        urls = host_urls(self.coordinator.origin, self._server_id)
+        return {
+            "alerts_open": int(row.get("alerts_open") or 0),
+            "severity": row.get("alert_severity"),
+            "alerts": row.get("alerts") or [],
+            "url": urls["alerts_url"],
+        }
+
+    @property
+    def icon(self):
+        return "mdi:alert" if int(self._row().get("alerts_open") or 0) else "mdi:alert-outline"
 
 
 class PiHerderHostRebootSensor(_HostBase):
@@ -273,7 +306,6 @@ class PiHerderHostRebootSensor(_HostBase):
 
 class PiHerderHostBackupSensor(_HostBase):
     _attr_name = "Last backup"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:backup-restore"
 
     def __init__(self, coordinator, entry, server_id: int) -> None:
@@ -281,14 +313,14 @@ class PiHerderHostBackupSensor(_HostBase):
         self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_backup"
 
     @property
+    def device_class(self):
+        if parse_utc(self._row().get("last_backup_at")):
+            return SensorDeviceClass.TIMESTAMP
+        return None
+
+    @property
     def native_value(self):
-        raw = self._row().get("last_backup_at")
-        if not raw:
-            return None
-        try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        except ValueError:
-            return None
+        return backup_state(self._row())
 
 
 class PiHerderHostLinkSensor(_HostBase):
@@ -303,11 +335,10 @@ class PiHerderHostLinkSensor(_HostBase):
 
     @property
     def native_value(self):
-        urls = host_urls(self.coordinator.origin, self._server_id)
-        if self._kind == "jobs":
-            return urls["jobs_url"]
-        return urls["audit_url"]
+        return "Open"
 
     @property
     def extra_state_attributes(self):
-        return {"url": self.native_value}
+        urls = host_urls(self.coordinator.origin, self._server_id)
+        url = urls["jobs_url"] if self._kind == "jobs" else urls["audit_url"]
+        return {"url": url}

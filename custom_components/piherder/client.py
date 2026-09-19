@@ -122,4 +122,5 @@ def derive_summary(servers: list, jobs: list, *, version: str | None) -> dict[st
         "jobs_running": len(active),
         "move_running": bool(move),
         "last_backup_oldest_at": oldest,
+        "alerts_open": 0,
     }

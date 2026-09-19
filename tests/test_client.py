@@ -60,3 +60,11 @@ def test_features_and_urls():
     assert urls["audit_url"] == "https://ph.example/audit?server_id=12"
     assert urls["open_url"] == "https://ph.example/servers/12"
     assert h.features_label({"features": {}}) == "none"
+    assert h.os_display({"os_type": "haos"}) == "HAOS"
+    assert h.os_display({"os_display": "Ubuntu", "os_type": "debian"}) == "Ubuntu"
+    assert h.device_model({"os_display": "Ubuntu", "features": {"backup": True, "os_patch": False, "docker": False}}) == "Ubuntu · backup"
+    assert h.backup_state({}) == "never"
+    dt = h.parse_utc("2026-09-10T02:00:00")
+    assert dt is not None and dt.tzinfo is not None
+    assert h.alert_state({"alerts_open": 0}) == "none"
+    assert "kernel" in h.alert_state({"alerts_open": 1, "alert_title": "kernel update"}) or h.alert_state({"alerts_open": 1, "alert_title": "kernel update"}) == "kernel update"
