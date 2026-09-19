@@ -14,6 +14,8 @@ No start/stop, Move, Files, console, or OS apply from HA.
 2. HACS → custom repositories → this GitHub repo → Integration.
 3. Add **PiHerder**: base URL, `ph_…` token, TLS verify, poll interval.
 
+HACS does **not** auto-refresh custom repos. To pick up a new GitHub Release: HACS → PiHerder → **⋮ → Redownload** (or **Update** once the release is visible). Then **Devices & services → PiHerder → Reload**. Restart HA if device icons stay blank.
+
 Operator wiki: [Home Assistant → PiHerder](https://piherder-docs.hacknow.info/integrations/home-assistant/) (Pages builds `main`; train copy is on `v1.6.0-dev`).
 
 ## GitHub
