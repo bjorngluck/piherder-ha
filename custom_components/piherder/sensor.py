@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, INTEGRATION_VERSION
 from .coordinator import PiHerderCoordinator
 from .helpers import (
     alert_state,
@@ -45,6 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             PiHerderMoveSensor(coord, entry),
             PiHerderHerderUpSensor(coord, entry),
             PiHerderVersionSensor(coord, entry),
+            PiHerderPluginSensor(coord, entry),
             PiHerderLinkSensor(coord, entry, "jobs", "Jobs", "mdi:clipboard-text-clock"),
             PiHerderLinkSensor(coord, entry, "audit", "Audit log", "mdi:shield-search"),
         ]
@@ -104,8 +105,9 @@ class _FleetBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
             manufacturer="PiHerder",
             model="Fleet",
             sw_version=str(version) if version else None,
+            hw_version=f"plugin {INTEGRATION_VERSION}",
             configuration_url=self.coordinator.origin,
-        )  # brand/icon.png (HA 2026.3+)
+        )
 
 
 class PiHerderFleetSensor(_FleetBase):
@@ -165,6 +167,21 @@ class PiHerderVersionSensor(_FleetBase):
         return summary.get("version")
 
 
+class PiHerderPluginSensor(_FleetBase):
+    """HACS/custom component version — confirms the files HA actually loaded."""
+
+    _attr_name = "Plugin"
+    _attr_icon = "mdi:puzzle-outline"
+
+    def __init__(self, coordinator, entry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_plugin"
+
+    @property
+    def native_value(self):
+        return INTEGRATION_VERSION
+
+
 class PiHerderLinkSensor(_FleetBase):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -208,6 +225,7 @@ class _HostBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
             name=name,
             manufacturer="PiHerder",
             model=device_model(row),
+            hw_version=os_display(row),
             configuration_url=urls["open_url"],
             via_device=(DOMAIN, f"{self._entry.entry_id}_fleet"),
         )

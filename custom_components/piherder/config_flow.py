@@ -19,16 +19,28 @@ from .const import (
     MIN_SCAN_INTERVAL,
 )
 
-STEP_USER = vol.Schema(
-    {
-        vol.Required(CONF_URL): str,
-        vol.Required(CONF_TOKEN): str,
-        vol.Optional(CONF_VERIFY_SSL, default=True): bool,
-        vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
-            vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)
-        ),
-    }
-)
+def _user_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+    """Keep URL/token/options on validation errors so the form is not wiped."""
+    d = defaults or {}
+    url_kw: dict[str, Any] = {}
+    token_kw: dict[str, Any] = {}
+    if d.get(CONF_URL):
+        url_kw["default"] = d[CONF_URL]
+    if d.get(CONF_TOKEN):
+        token_kw["default"] = d[CONF_TOKEN]
+    verify = d.get(CONF_VERIFY_SSL, True)
+    interval = d.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    return vol.Schema(
+        {
+            vol.Required(CONF_URL, **url_kw): str,
+            vol.Required(CONF_TOKEN, **token_kw): str,
+            vol.Optional(CONF_VERIFY_SSL, default=bool(verify)): bool,
+            vol.Optional(CONF_SCAN_INTERVAL, default=int(interval or DEFAULT_SCAN_INTERVAL)): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+            ),
+        }
+    )
 
 
 async def _validate(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
@@ -53,11 +65,13 @@ class PiHerderConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 data = await _validate(self.hass, user_input)
+            except ValueError:
+                errors[CONF_URL] = "invalid_url"
             except PiHerderApiError as exc:
-                if exc.status in (401, 403):
-                    errors["base"] = "invalid_auth"
+                if exc.status in (400, 401, 403):
+                    errors[CONF_TOKEN] = "invalid_auth"
                 else:
-                    errors["base"] = "cannot_connect"
+                    errors[CONF_URL] = "cannot_connect"
             except Exception:
                 errors["base"] = "cannot_connect"
             else:
@@ -65,4 +79,8 @@ class PiHerderConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(title="PiHerder", data=data)
 
-        return self.async_show_form(step_id="user", data_schema=STEP_USER, errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=_user_schema(user_input),
+            errors=errors,
+        )

@@ -14,7 +14,8 @@
     },
     "error": {
       "cannot_connect": "Could not reach PiHerder",
-      "invalid_auth": "Token rejected (need read; check allowlist)"
+      "invalid_auth": "Token rejected (need read; check allowlist)",
+      "invalid_url": "Enter the PiHerder origin (https://…)"
     },
     "abort": {
       "already_configured": "This PiHerder URL is already configured"
