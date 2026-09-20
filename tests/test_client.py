@@ -52,17 +52,21 @@ def test_features_and_urls():
     spec.loader.exec_module(h)
     row = {"os_type": "debian", "features": {"backup": True, "os_patch": False, "docker": True}}
     assert h.features_label(row) == "backup, Docker"
-    assert h.device_model(row) == "debian · backup, Docker"
+    assert h.device_model(row) == "Debian"
     assert h.feature_flags(row)["backup"] is True
     assert h.feature_flags(row)["os_patch"] is False
     urls = h.host_urls("https://ph.example", 12)
     assert urls["jobs_url"] == "https://ph.example/jobs?server_id=12"
     assert urls["audit_url"] == "https://ph.example/audit?server_id=12"
     assert urls["open_url"] == "https://ph.example/servers/12"
+    assert urls["docker_url"].endswith("/docker")
+    assert urls["backup_url"].endswith("/backups")
+    assert urls["services_url"].endswith("/services")
     assert h.features_label({"features": {}}) == "none"
     assert h.os_display({"os_type": "haos"}) == "HAOS"
     assert h.os_display({"os_display": "Ubuntu", "os_type": "debian"}) == "Ubuntu"
-    assert h.device_model({"os_display": "Ubuntu", "features": {"backup": True, "os_patch": False, "docker": False}}) == "Ubuntu · backup"
+    assert h.device_model({"os_display": "Ubuntu", "features": {"backup": True, "os_patch": False, "docker": False}}) == "Ubuntu"
+    assert h.hardware_label({"hardware": "Raspberry Pi 5 Model B Rev 1.0"}) == "Raspberry Pi 5 Model B Rev 1.0"
     assert h.backup_state({}) == "never"
     dt = h.parse_utc("2026-09-10T02:00:00")
     assert dt is not None and dt.tzinfo is not None

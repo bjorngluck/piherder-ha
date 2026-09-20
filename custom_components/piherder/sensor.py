@@ -17,7 +17,7 @@ from .helpers import (
     device_model,
     feature_flags,
     features_label,
-    fleet_urls,
+    hardware_label,
     host_urls,
     os_display,
     parse_utc,
@@ -46,8 +46,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             PiHerderHerderUpSensor(coord, entry),
             PiHerderVersionSensor(coord, entry),
             PiHerderPluginSensor(coord, entry),
-            PiHerderLinkSensor(coord, entry, "jobs", "Jobs", "mdi:clipboard-text-clock"),
-            PiHerderLinkSensor(coord, entry, "audit", "Audit log", "mdi:shield-search"),
         ]
     )
     async_add_entities(fleet)
@@ -60,8 +58,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             PiHerderHostLastSeenSensor(coord, entry, sid),
             PiHerderHostRebootSensor(coord, entry, sid),
             PiHerderHostBackupSensor(coord, entry, sid),
-            PiHerderHostLinkSensor(coord, entry, sid, "jobs", "Jobs", "mdi:clipboard-text-clock"),
-            PiHerderHostLinkSensor(coord, entry, sid, "audit", "Audit log", "mdi:shield-search"),
         ]
 
     def _discover() -> None:
@@ -182,27 +178,6 @@ class PiHerderPluginSensor(_FleetBase):
         return INTEGRATION_VERSION
 
 
-class PiHerderLinkSensor(_FleetBase):
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator, entry, kind: str, name: str, icon: str) -> None:
-        super().__init__(coordinator, entry)
-        self._kind = kind
-        self._attr_name = name
-        self._attr_icon = icon
-        self._attr_unique_id = f"{entry.entry_id}_{kind}_url"
-
-    @property
-    def native_value(self):
-        return "Open"
-
-    @property
-    def extra_state_attributes(self):
-        urls = fleet_urls(self.coordinator.origin)
-        url = urls["jobs_url"] if self._kind == "jobs" else urls["audit_url"]
-        return {"url": url, **urls}
-
-
 class _HostBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
     _attr_has_entity_name = True
     _attr_icon = "mdi:server"
@@ -225,7 +200,7 @@ class _HostBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
             name=name,
             manufacturer="PiHerder",
             model=device_model(row),
-            hw_version=os_display(row),
+            hw_version=hardware_label(row),
             configuration_url=urls["open_url"],
             via_device=(DOMAIN, f"{self._entry.entry_id}_fleet"),
         )
@@ -341,22 +316,4 @@ class PiHerderHostBackupSensor(_HostBase):
         return backup_state(self._row())
 
 
-class PiHerderHostLinkSensor(_HostBase):
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, entry, server_id: int, kind: str, name: str, icon: str) -> None:
-        super().__init__(coordinator, entry, server_id)
-        self._kind = kind
-        self._attr_name = name
-        self._attr_icon = icon
-        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_{kind}_url"
-
-    @property
-    def native_value(self):
-        return "Open"
-
-    @property
-    def extra_state_attributes(self):
-        urls = host_urls(self.coordinator.origin, self._server_id)
-        url = urls["jobs_url"] if self._kind == "jobs" else urls["audit_url"]
-        return {"url": url}

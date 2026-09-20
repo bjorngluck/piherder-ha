@@ -38,19 +38,41 @@ def features_label(row: dict[str, Any] | None) -> str:
 
 def os_display(row: dict[str, Any] | None) -> str:
     raw = row or {}
+    if raw.get("os_pretty"):
+        return str(raw["os_pretty"])
     if raw.get("os_display"):
         return str(raw["os_display"])
-    ot = str(raw.get("os_type") or "").strip().lower()
+    ot = str(raw.get("os_id") or raw.get("os_type") or "").strip().lower()
     return OS_LABELS.get(ot, ot or "Linux")
 
 
+def hardware_label(row: dict[str, Any] | None) -> str | None:
+    raw = row or {}
+    hw = (raw.get("hardware") or "").strip()
+    if hw:
+        return hw
+    arch = (raw.get("arch") or "").strip()
+    return arch or None
+
+
 def device_model(row: dict[str, Any] | None) -> str:
-    """Device model line: OS display + enabled features (not raw debian hardware)."""
-    os_name = os_display(row)
-    feats = features_label(row)
-    if feats == "none":
-        return os_name
-    return f"{os_name} · {feats}"
+    """HA model = real OS pretty name (Ubuntu / HAOS), not debian hardware."""
+    return os_display(row)
+
+
+def host_urls(origin: str, server_id: int) -> dict[str, str]:
+    base = (origin or "").rstrip("/")
+    sid = int(server_id)
+    return {
+        "open_url": f"{base}/servers/{sid}",
+        "features_url": f"{base}/servers/{sid}#host-features",
+        "docker_url": f"{base}/servers/{sid}/docker",
+        "backup_url": f"{base}/servers/{sid}/backups",
+        "services_url": f"{base}/servers/{sid}/services",
+        "jobs_url": f"{base}/jobs?server_id={sid}",
+        "audit_url": f"{base}/audit?server_id={sid}",
+        "alerts_url": f"{base}/notifications?server_id={sid}",
+    }
 
 
 def parse_utc(raw: Any) -> datetime | None:
@@ -93,15 +115,4 @@ def fleet_urls(origin: str) -> dict[str, str]:
         "audit_url": f"{base}/audit",
         "alerts_url": f"{base}/notifications",
         "open_url": base,
-    }
-
-
-def host_urls(origin: str, server_id: int) -> dict[str, str]:
-    base = (origin or "").rstrip("/")
-    sid = int(server_id)
-    return {
-        "open_url": f"{base}/servers/{sid}",
-        "jobs_url": f"{base}/jobs?server_id={sid}",
-        "audit_url": f"{base}/audit?server_id={sid}",
-        "alerts_url": f"{base}/notifications?server_id={sid}",
     }
