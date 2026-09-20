@@ -15,7 +15,7 @@ from .coordinator import PiHerderCoordinator
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/api/piherder/piherder-dashboard-card.js?v=0.2.1"
+_CARD_URL = "/local/piherder-dashboard-card.js?v=0.2.2"
 
 
 class PiHerderCardView(http.HomeAssistantView):
@@ -64,7 +64,10 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> No
         for item in items:
             if str(item.get("url") or "").split("?")[0] == stem:
                 return
-        await resources.async_create_item({"res_type": "module", "url": url})
+        try:
+            await resources.async_create_item({"resource_type": "module", "url": url})
+        except Exception:
+            await resources.async_create_item({"res_type": "module", "url": url})
     except Exception:
         return
 
@@ -74,6 +77,11 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         return
     hass.data[_WWW_FLAG] = True
     hass.http.register_view(PiHerderCardView)
+    src = Path(__file__).parent / "www" / "piherder-dashboard-card.js"
+    dest_dir = Path(hass.config.path("www"))
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / "piherder-dashboard-card.js"
+    dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     hass.data.setdefault("frontend_extra_module_url", set()).add(_CARD_URL)
     try:
         frontend.add_extra_js_url(hass, _CARD_URL)

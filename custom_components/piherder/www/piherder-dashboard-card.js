@@ -1,5 +1,6 @@
 /* PiHerder fleet Lovelace card — totals, bars, expand host, real http links. */
-const CARD = "piherder-dashboard-card";
+(function () {
+  const CARD = "piherder-dashboard-card";
 
   function fmtBytes(n) {
     if (n == null || n === 0) return n === 0 ? "0" : "—";
@@ -239,3 +240,4 @@ if (!window.customCards.some((c) => c.type === CARD)) {
     preview: true,
   });
 }
+})();
