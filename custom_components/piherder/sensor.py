@@ -21,6 +21,7 @@ from .helpers import (
     host_urls,
     os_display,
     parse_utc,
+    shortcut_link_attrs,
 )
 
 FLEET_SENSORS = (
@@ -50,47 +51,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     )
     async_add_entities(fleet)
 
-    known_sc: set[tuple[int, str]] = set()
-
     def _host_bundle(sid: int) -> list[SensorEntity]:
         return [
             PiHerderHostOsSensor(coord, entry, sid),
             PiHerderHostFeaturesSensor(coord, entry, sid),
+            PiHerderHostAlertSensor(coord, entry, sid),
             PiHerderHostLastSeenSensor(coord, entry, sid),
             PiHerderHostRebootSensor(coord, entry, sid),
+            PiHerderHostBackupSensor(coord, entry, sid),
         ]
-
-    def _shortcut_bundle(sid: int, row: dict) -> list[SensorEntity]:
-        flags = feature_flags(row)
-        out: list[SensorEntity] = [
-            PiHerderHostAlertSensor(coord, entry, sid),
-            PiHerderHostAuditSensor(coord, entry, sid),
-        ]
-        if flags.get("docker"):
-            out.append(PiHerderHostDockerSensor(coord, entry, sid))
-        if flags.get("backup"):
-            out.append(PiHerderHostBackupSensor(coord, entry, sid))
-        return out
 
     def _discover() -> None:
         rows = (coord.data or {}).get("servers") or []
+        fresh = {int(s["id"]) for s in rows if s.get("id") is not None}
+        new_ids = fresh - known
+        if not new_ids:
+            return
         entities: list[SensorEntity] = []
-        for row in rows:
-            if row.get("id") is None:
-                continue
-            sid = int(row["id"])
-            if sid not in known:
-                known.add(sid)
-                entities.extend(_host_bundle(sid))
-            for ent in _shortcut_bundle(sid, row):
-                kind = getattr(ent, "_shortcut", "")
-                key = (sid, kind)
-                if key in known_sc:
-                    continue
-                known_sc.add(key)
-                entities.append(ent)
-        if entities:
-            async_add_entities(entities)
+        for sid in sorted(new_ids):
+            known.add(sid)
+            entities.extend(_host_bundle(sid))
+        async_add_entities(entities)
 
     _discover()
     entry.async_on_unload(coord.async_add_listener(_discover))
@@ -207,22 +188,13 @@ class _HostBase(CoordinatorEntity[PiHerderCoordinator], SensorEntity):
         self._entry = entry
         self._server_id = server_id
 
-    _shortcut: str = ""
-
     def _row(self) -> dict[str, Any]:
         return _host(self.coordinator, self._server_id) or {}
 
-    def _shortcut_device(self, kind: str, label: str, url_key: str) -> DeviceInfo:
-        row = self._row()
-        urls = host_urls(self.coordinator.origin, self._server_id)
-        host_name = row.get("name") or f"Host {self._server_id}"
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._entry.entry_id}_host_{self._server_id}_{kind}")},
-            name=f"{host_name} · {label}",
-            manufacturer="PiHerder",
-            model=label,
-            configuration_url=urls[url_key],
-            via_device=(DOMAIN, f"{self._entry.entry_id}_host_{self._server_id}"),
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return shortcut_link_attrs(
+            self.coordinator.origin, self._server_id, self._row()
         )
 
     @property
@@ -269,8 +241,7 @@ class PiHerderHostFeaturesSensor(_HostBase):
     @property
     def extra_state_attributes(self):
         flags = feature_flags(self._row())
-        urls = host_urls(self.coordinator.origin, self._server_id)
-        return {**flags, "piherder": urls["open_url"]}
+        return {**flags, **super().extra_state_attributes}
 
 
 class PiHerderHostLastSeenSensor(_HostBase):
@@ -292,14 +263,9 @@ class PiHerderHostLastSeenSensor(_HostBase):
 
 
 class PiHerderHostAlertSensor(_HostBase):
-    _shortcut = "alerts"
     _attr_name = "Alert"
     _attr_icon = "mdi:alert"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return self._shortcut_device("alerts", "Alerts", "alerts_url")
 
     def __init__(self, coordinator, entry, server_id: int) -> None:
         super().__init__(coordinator, entry, server_id)
@@ -312,8 +278,8 @@ class PiHerderHostAlertSensor(_HostBase):
     @property
     def extra_state_attributes(self):
         row = self._row()
-        urls = host_urls(self.coordinator.origin, self._server_id)
         return {
+            **super().extra_state_attributes,
             "alerts_open": int(row.get("alerts_open") or 0),
             "severity": row.get("alert_severity"),
             "alerts": row.get("alerts") or [],
@@ -337,53 +303,9 @@ class PiHerderHostRebootSensor(_HostBase):
         return "yes" if self._row().get("reboot_pending") else "no"
 
 
-class PiHerderHostDockerSensor(_HostBase):
-    _shortcut = "docker"
-    _attr_name = "Updates"
-    _attr_icon = "mdi:docker"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    def __init__(self, coordinator, entry, server_id: int) -> None:
-        super().__init__(coordinator, entry, server_id)
-        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_docker"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return self._shortcut_device("docker", "Docker", "docker_url")
-
-    @property
-    def native_value(self):
-        return int(self._row().get("container_updates_count") or 0)
-
-
-class PiHerderHostAuditSensor(_HostBase):
-    _shortcut = "audit"
-    _attr_name = "Log"
-    _attr_icon = "mdi:shield-search"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_visible_default = False
-
-    def __init__(self, coordinator, entry, server_id: int) -> None:
-        super().__init__(coordinator, entry, server_id)
-        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_audit"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return self._shortcut_device("audit", "Audit", "audit_url")
-
-    @property
-    def native_value(self):
-        return None
-
-
 class PiHerderHostBackupSensor(_HostBase):
-    _shortcut = "backup"
     _attr_name = "Last backup"
     _attr_icon = "mdi:backup-restore"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return self._shortcut_device("backup", "Backups", "backup_url")
 
     def __init__(self, coordinator, entry, server_id: int) -> None:
         super().__init__(coordinator, entry, server_id)

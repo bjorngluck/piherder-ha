@@ -60,6 +60,21 @@ def device_model(row: dict[str, Any] | None) -> str:
     return os_display(row)
 
 
+def shortcut_link_attrs(origin: str, server_id: int, row: dict[str, Any] | None) -> dict[str, str]:
+    """http(s) attrs HA more-info renders as real links (same tab behaviour as Visit)."""
+    urls = host_urls(origin, server_id)
+    flags = feature_flags(row)
+    out = {
+        "Alerts": urls["alerts_url"],
+        "Audit": urls["audit_url"],
+    }
+    if flags.get("docker"):
+        out["Docker"] = urls["docker_url"]
+    if flags.get("backup"):
+        out["Backups"] = urls["backup_url"]
+    return out
+
+
 def host_urls(origin: str, server_id: int) -> dict[str, str]:
     base = (origin or "").rstrip("/")
     sid = int(server_id)

@@ -12,14 +12,23 @@ PLATFORMS = [Platform.SENSOR]
 
 
 def _purge_fake_link_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Drop leftover Jobs/Audit/Open-* entities from 0.1.2–0.1.4."""
+    """Drop leftover press-here entities and nested shortcut devices."""
+    from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
 
-    reg = er.async_get(hass)
-    for ent in er.async_entries_for_config_entry(reg, entry.entry_id):
+    ereg = er.async_get(hass)
+    for ent in er.async_entries_for_config_entry(ereg, entry.entry_id):
         uid = ent.unique_id or ""
-        if uid.endswith("_open") or uid.endswith("_url"):
-            reg.async_remove(ent.entity_id)
+        if uid.endswith("_open") or uid.endswith("_url") or uid.endswith("_audit") or uid.endswith("_docker"):
+            ereg.async_remove(ent.entity_id)
+
+    dreg = dr.async_get(hass)
+    suffixes = ("_docker", "_alerts", "_audit", "_backup")
+    for device in list(dr.async_entries_for_config_entry(dreg, entry.entry_id)):
+        for domain, ident in device.identifiers:
+            if domain == DOMAIN and ident.endswith(suffixes):
+                dreg.async_remove_device(device.id)
+                break
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
