@@ -14,7 +14,7 @@ No start/stop, Move, Files, console, or OS apply from HA.
 2. HACS → custom repositories → [bjorngluck/piherder-ha](https://github.com/bjorngluck/piherder-ha) → Integration.
 3. Add **PiHerder**: base URL, `ph_…` token, TLS verify, poll interval. Wrong URL/token keeps the form filled.
 
-HACS does **not** auto-refresh custom repos. New release: HACS → PiHerder → **⋮ → Redownload** → pick the tag → **restart Home Assistant**. Confirm fleet **Plugin** is **0.2.0**. Dashboard → Add card → Custom: **PiHerder fleet**.
+HACS does **not** auto-refresh custom repos. New release: HACS → PiHerder → **⋮ → Redownload** → pick the tag → **restart Home Assistant**. Confirm fleet **Plugin** is **0.2.1**, restart HA, hard-refresh the browser. Dashboard → Add card → **PiHerder fleet**. If missing: Dashboard ⋮ → Resources → add `/api/piherder/piherder-dashboard-card.js?v=0.2.1` as **JavaScript module**.
 
 Operator wiki: [Home Assistant → PiHerder](https://piherder-docs.hacknow.info/integrations/home-assistant/) (Pages builds `main`; train copy is on `v1.6.0-dev`).
 

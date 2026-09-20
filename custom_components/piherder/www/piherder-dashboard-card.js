@@ -1,6 +1,5 @@
 /* PiHerder fleet Lovelace card — totals, bars, expand host, real http links. */
-(() => {
-  const CARD = "piherder-dashboard-card";
+const CARD = "piherder-dashboard-card";
 
   function fmtBytes(n) {
     if (n == null || n === 0) return n === 0 ? "0" : "—";
@@ -228,15 +227,15 @@
     }
   }
 
-  if (!customElements.get(CARD)) {
-    customElements.define(CARD, PiHerderDashboardCard);
-  }
-  window.customCards = window.customCards || [];
-  if (!window.customCards.some((c) => c.type === CARD)) {
-    window.customCards.push({
-      type: CARD,
-      name: "PiHerder fleet",
-      description: "Fleet totals, expandable hosts, links into PiHerder",
-    });
-  }
-})();
+if (!customElements.get(CARD)) {
+  customElements.define(CARD, PiHerderDashboardCard);
+}
+window.customCards = window.customCards || [];
+if (!window.customCards.some((c) => c.type === CARD)) {
+  window.customCards.push({
+    type: CARD,
+    name: "PiHerder fleet",
+    description: "Fleet totals, expandable hosts, links into PiHerder",
+    preview: true,
+  });
+}

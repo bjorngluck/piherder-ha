@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aiohttp import web
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.components import frontend, websocket_api
+from homeassistant.components import frontend, http, websocket_api
 import voluptuous as vol
 
 from .const import DOMAIN
@@ -14,6 +15,25 @@ from .coordinator import PiHerderCoordinator
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
+_CARD_URL = "/api/piherder/piherder-dashboard-card.js?v=0.2.1"
+
+
+class PiHerderCardView(http.HomeAssistantView):
+    """Serve the Lovelace module without auth (same origin as extra_js)."""
+
+    url = "/api/piherder/piherder-dashboard-card.js"
+    name = "api:piherder:card"
+    requires_auth = False
+
+    async def get(self, request):
+        path = Path(__file__).parent / "www" / "piherder-dashboard-card.js"
+        return web.FileResponse(
+            path,
+            headers={
+                "Content-Type": "application/javascript; charset=utf-8",
+                "Cache-Control": "no-cache",
+            },
+        )
 
 
 @websocket_api.websocket_command({vol.Required("type"): "piherder/snapshot"})
@@ -31,21 +51,36 @@ async def ws_snapshot(hass: HomeAssistant, connection: websocket_api.ActiveConne
     connection.send_result(msg["id"], {"origin": origin, "data": data or {}})
 
 
+async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> None:
+    try:
+        ll = hass.data.get("lovelace")
+        resources = getattr(ll, "resources", None) if ll is not None else None
+        if resources is None:
+            return
+        if getattr(resources, "loaded", True) is False:
+            await resources.async_load()
+        items = resources.async_items() if hasattr(resources, "async_items") else []
+        stem = url.split("?")[0]
+        for item in items:
+            if str(item.get("url") or "").split("?")[0] == stem:
+                return
+        await resources.async_create_item({"res_type": "module", "url": url})
+    except Exception:
+        return
+
+
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     if hass.data.get(_WWW_FLAG):
         return
     hass.data[_WWW_FLAG] = True
-    www = Path(__file__).parent / "www"
+    hass.http.register_view(PiHerderCardView)
+    hass.data.setdefault("frontend_extra_module_url", set()).add(_CARD_URL)
     try:
-        from homeassistant.components.http import StaticPathConfig
-
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig("/piherder-card", str(www), False)]
-        )
+        frontend.add_extra_js_url(hass, _CARD_URL)
     except Exception:
-        hass.http.register_static_path("/piherder-card", str(www), False)
-    frontend.add_extra_js_url(hass, "/piherder-card/piherder-dashboard-card.js?v=0.2.0")
+        pass
     websocket_api.async_register_command(hass, ws_snapshot)
+    await _async_register_lovelace_resource(hass, _CARD_URL)
 
 
 def _purge_fake_link_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
