@@ -235,7 +235,7 @@ class PiHerderHostFeaturesSensor(_HostBase):
     def extra_state_attributes(self):
         flags = feature_flags(self._row())
         urls = host_urls(self.coordinator.origin, self._server_id)
-        return {**flags, **urls}
+        return {**flags, "piherder": urls["open_url"]}
 
 
 class PiHerderHostLastSeenSensor(_HostBase):
@@ -259,6 +259,7 @@ class PiHerderHostLastSeenSensor(_HostBase):
 class PiHerderHostAlertSensor(_HostBase):
     _attr_name = "Alert"
     _attr_icon = "mdi:alert"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, entry, server_id: int) -> None:
         super().__init__(coordinator, entry, server_id)
@@ -276,7 +277,6 @@ class PiHerderHostAlertSensor(_HostBase):
             "alerts_open": int(row.get("alerts_open") or 0),
             "severity": row.get("alert_severity"),
             "alerts": row.get("alerts") or [],
-            "url": urls["alerts_url"],
         }
 
     @property
