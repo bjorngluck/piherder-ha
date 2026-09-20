@@ -31,7 +31,7 @@ type: custom:piherder-dashboard-card
 
 “Custom element doesn’t exist” = stale resource URL, resource type is JavaScript instead of module, or HA was not restarted after Redownload.
 
-CPU/memory/disk numbers come from PiHerder’s stored host-facts snapshot (Alembic **045**). Recreate PiHerder **web**, then System Info refresh (or wait ~15 minutes). Empty bars mean the herder has no snapshot yet.
+CPU/memory/disk numbers come from PiHerder **System Info** (a stored host snapshot, not live SSH). v1.6 persists those columns so this integration can poll the database every 30s without SSHing the fleet. Recreate PiHerder **web** (Alembic **045**), then System Info refresh icon (or wait ~15 minutes). Empty bars mean the herder has no snapshot yet.
 
 Operator wiki: [Home Assistant → PiHerder](https://piherder-docs.hacknow.info/integrations/home-assistant/) (Pages builds `main`; train copy is on `v1.6.0-dev`).
 
