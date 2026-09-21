@@ -123,6 +123,23 @@ def alert_state(row: dict[str, Any] | None) -> str:
     return str(n)
 
 
+def disk_used_percent(row: dict[str, Any] | None) -> float | None:
+    raw = row or {}
+    try:
+        total = int(raw.get("disk_total_bytes") or 0)
+        used = int(raw.get("disk_used_bytes") or 0)
+    except (TypeError, ValueError):
+        return None
+    if total <= 0:
+        return None
+    return round(100.0 * used / total, 1)
+
+
+def container_slug(name: str) -> str:
+    text = "".join(ch if ch.isalnum() else "_" for ch in (name or "").strip().lower())
+    return text.strip("_") or "container"
+
+
 def fleet_urls(origin: str) -> dict[str, str]:
     base = (origin or "").rstrip("/")
     return {

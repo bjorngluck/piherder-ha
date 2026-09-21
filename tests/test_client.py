@@ -68,6 +68,9 @@ def test_features_and_urls():
     assert h.device_model({"os_display": "Ubuntu", "features": {"backup": True, "os_patch": False, "docker": False}}) == "Ubuntu"
     assert h.hardware_label({"hardware": "Raspberry Pi 5 Model B Rev 1.0"}) == "Raspberry Pi 5 Model B Rev 1.0"
     assert h.backup_state({}) == "never"
+    assert h.disk_used_percent({"disk_total_bytes": 1000, "disk_used_bytes": 250}) == 25.0
+    assert h.disk_used_percent({}) is None
+    assert h.container_slug("Web App") == "web_app"
     dt = h.parse_utc("2026-09-10T02:00:00")
     assert dt is not None and dt.tzinfo is not None
     assert h.alert_state({"alerts_open": 0}) == "none"

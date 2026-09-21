@@ -95,13 +95,47 @@ async def fetch_snapshot(
     if not isinstance(summary, dict):
         summary = derive_summary(servers, jobs, version=None)
 
+    inventory = await _optional_object(
+        session, f"{origin}/api/v1/inventory", token, verify_ssl=verify_ssl
+    )
+    services = await _optional_object(
+        session, f"{origin}/api/v1/services", token, verify_ssl=verify_ssl
+    )
+    hosts = inventory.get("hosts") if isinstance(inventory, dict) else []
+    if not isinstance(hosts, list):
+        hosts = []
+    service_rows = services.get("services") if isinstance(services, dict) else []
+    if not isinstance(service_rows, list):
+        service_rows = []
+
     return {
         "origin": origin,
         "health": health,
         "summary": summary,
         "servers": servers,
         "jobs": jobs,
+        "inventory": hosts,
+        "services": service_rows,
     }
+
+
+async def _optional_object(
+    session: aiohttp.ClientSession,
+    url: str,
+    token: str,
+    *,
+    verify_ssl: bool = True,
+) -> dict:
+    """Slice 1b snapshots. 404 on an older herder is an empty object, not a failure."""
+    try:
+        data = await _get_json(session, url, token, verify_ssl=verify_ssl)
+    except PiHerderApiError as exc:
+        if exc.status in (404, 405):
+            return {}
+        if exc.status >= 500:
+            raise
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def derive_summary(servers: list, jobs: list, *, version: str | None) -> dict[str, Any]:

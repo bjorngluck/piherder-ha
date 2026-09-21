@@ -18,6 +18,8 @@ from .helpers import (
     feature_flags,
     features_label,
     hardware_label,
+    container_slug,
+    disk_used_percent,
     host_urls,
     os_display,
     parse_utc,
@@ -37,6 +39,8 @@ FLEET_SENSORS = (
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coord: PiHerderCoordinator = hass.data[DOMAIN][entry.entry_id]
     known: set[int] = set()
+    known_containers: set[str] = set()
+    known_services: set[int] = set()
 
     fleet: list[SensorEntity] = [
         PiHerderFleetSensor(coord, entry, key, name, icon) for key, name, icon in FLEET_SENSORS
@@ -59,6 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             PiHerderHostLastSeenSensor(coord, entry, sid),
             PiHerderHostRebootSensor(coord, entry, sid),
             PiHerderHostBackupSensor(coord, entry, sid),
+            PiHerderHostDiskSensor(coord, entry, sid),
         ]
 
     def _discover() -> None:
@@ -73,8 +78,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.extend(_host_bundle(sid))
         async_add_entities(entities)
 
-    _discover()
-    entry.async_on_unload(coord.async_add_listener(_discover))
+    def _discover_snapshots() -> None:
+        entities: list[SensorEntity] = []
+        for host in (coord.data or {}).get("inventory") or []:
+            sid = int(host.get("server_id") or 0)
+            if sid <= 0:
+                continue
+            for container in host.get("containers") or []:
+                name = (container.get("name") or "").strip()
+                if not name:
+                    continue
+                key = f"{sid}:{name}"
+                if key in known_containers:
+                    continue
+                known_containers.add(key)
+                entities.append(PiHerderContainerSensor(coord, entry, sid, name))
+        for svc in (coord.data or {}).get("services") or []:
+            try:
+                bid = int(svc.get("id") or 0)
+            except (TypeError, ValueError):
+                bid = 0
+            if bid <= 0 or bid in known_services:
+                continue
+            known_services.add(bid)
+            sid = int(svc.get("server_id") or 0)
+            entities.append(PiHerderServiceSensor(coord, entry, sid, bid))
+        if entities:
+            async_add_entities(entities)
+
+    def _on_update() -> None:
+        _discover()
+        _discover_snapshots()
+
+    _on_update()
+    entry.async_on_unload(coord.async_add_listener(_on_update))
 
 
 def _host(coord: PiHerderCoordinator, server_id: int) -> dict[str, Any] | None:
@@ -320,6 +357,140 @@ class PiHerderHostBackupSensor(_HostBase):
     @property
     def native_value(self):
         return backup_state(self._row())
+
+
+class PiHerderHostDiskSensor(_HostBase):
+    """Disk used percent from the stored host-facts snapshot."""
+
+    _attr_name = "Disk"
+    _attr_icon = "mdi:harddisk"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator, entry, server_id: int) -> None:
+        super().__init__(coordinator, entry, server_id)
+        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_disk"
+
+    @property
+    def native_value(self):
+        return disk_used_percent(self._row())
+
+    @property
+    def extra_state_attributes(self):
+        row = self._row()
+        return {
+            **super().extra_state_attributes,
+            "disk_used_bytes": row.get("disk_used_bytes"),
+            "disk_total_bytes": row.get("disk_total_bytes"),
+            "os_pretty": row.get("os_pretty"),
+            "hardware": row.get("hardware"),
+        }
+
+
+def _inventory_host(coord: PiHerderCoordinator, server_id: int) -> dict[str, Any]:
+    for host in (coord.data or {}).get("inventory") or []:
+        if int(host.get("server_id") or 0) == server_id:
+            return host
+    return {}
+
+
+def _container_row(coord: PiHerderCoordinator, server_id: int, name: str) -> dict[str, Any] | None:
+    for container in _inventory_host(coord, server_id).get("containers") or []:
+        if (container.get("name") or "") == name:
+            return container
+    return None
+
+
+class PiHerderContainerSensor(_HostBase):
+    """One container from the last Docker inventory. Status only — no start/stop."""
+
+    def __init__(self, coordinator, entry, server_id: int, name: str) -> None:
+        super().__init__(coordinator, entry, server_id)
+        self._name = name
+        self._attr_name = name
+        self._attr_icon = "mdi:docker"
+        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_ctr_{container_slug(name)}"
+
+    def _container(self) -> dict[str, Any] | None:
+        return _container_row(self.coordinator, self._server_id, self._name)
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._container() is not None
+
+    @property
+    def native_value(self):
+        row = self._container() or {}
+        if row.get("running"):
+            return "running"
+        return row.get("state") or "exited"
+
+    @property
+    def extra_state_attributes(self):
+        row = self._container() or {}
+        return {
+            **super().extra_state_attributes,
+            "image": row.get("image") or "",
+            "uptime": row.get("status") or "",
+            "project": row.get("project") or "",
+            "service": row.get("service") or "",
+        }
+
+
+def _service_row(coord: PiHerderCoordinator, binding_id: int) -> dict[str, Any] | None:
+    for svc in (coord.data or {}).get("services") or []:
+        if int(svc.get("id") or 0) == binding_id:
+            return svc
+    return None
+
+
+class PiHerderServiceSensor(_HostBase):
+    """Monitored service up/down from the stored chip. Not a live probe."""
+
+    def __init__(self, coordinator, entry, server_id: int, binding_id: int) -> None:
+        super().__init__(coordinator, entry, server_id)
+        self._binding_id = binding_id
+        label = (_service_row(coordinator, binding_id) or {}).get("label") or f"Service {binding_id}"
+        self._attr_name = label
+        self._attr_icon = "mdi:lan-connect"
+        self._attr_unique_id = f"{entry.entry_id}_svc_{binding_id}"
+
+    def _svc(self) -> dict[str, Any] | None:
+        return _service_row(self.coordinator, self._binding_id)
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._svc() is not None
+
+    @property
+    def native_value(self):
+        return (self._svc() or {}).get("state") or "unknown"
+
+    @property
+    def extra_state_attributes(self):
+        row = self._svc() or {}
+        base = super().extra_state_attributes if self._server_id else {}
+        return {
+            **base,
+            "message": row.get("message") or "",
+            "scope": row.get("scope") or "",
+            "docker_project": row.get("docker_project") or "",
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        if self._server_id:
+            return super().device_info
+        summary = (self.coordinator.data or {}).get("summary") or {}
+        version = summary.get("version")
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._entry.entry_id}_fleet")},
+            name="PiHerder fleet",
+            manufacturer="PiHerder",
+            model="Fleet",
+            sw_version=str(version) if version else None,
+            configuration_url=self.coordinator.origin,
+        )
 
 
 

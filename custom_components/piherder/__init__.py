@@ -15,7 +15,7 @@ from .coordinator import PiHerderCoordinator
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/local/piherder-dashboard-card.js?v=0.2.2"
+_CARD_URL = "/local/piherder-dashboard-card.js?v=0.2.3"
 
 
 class PiHerderCardView(http.HomeAssistantView):
