@@ -15,7 +15,7 @@ from .coordinator import PiHerderCoordinator
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/local/piherder-dashboard-card.js?v=0.2.3"
+_CARD_URL = "/local/piherder-dashboard-card.js?v=0.2.4"
 
 
 class PiHerderCardView(http.HomeAssistantView):
@@ -77,11 +77,16 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         return
     hass.data[_WWW_FLAG] = True
     hass.http.register_view(PiHerderCardView)
-    src = Path(__file__).parent / "www" / "piherder-dashboard-card.js"
+    www = Path(__file__).parent / "www"
     dest_dir = Path(hass.config.path("www"))
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / "piherder-dashboard-card.js"
-    dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    (dest_dir / "piherder-dashboard-card.js").write_text(
+        (www / "piherder-dashboard-card.js").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    logo = www / "piherder-logo.png"
+    if logo.is_file():
+        (dest_dir / "piherder-logo.png").write_bytes(logo.read_bytes())
     hass.data.setdefault("frontend_extra_module_url", set()).add(_CARD_URL)
     try:
         frontend.add_extra_js_url(hass, _CARD_URL)

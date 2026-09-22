@@ -151,7 +151,10 @@
             color: var(--primary-text-color, #eee);
             font: 14px/1.4 var(--ha-font-family-body, system-ui, sans-serif);
           }
-          .ph-title { font-weight: 650; font-size: 1.05rem; margin: 0 0 12px; letter-spacing: -0.02em; }
+          .ph-head { display:flex; align-items:center; gap:10px; margin: 0 0 12px; }
+          .ph-logo { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; background: #fff; }
+          .ph-title { font-weight: 650; font-size: 1.05rem; margin: 0; letter-spacing: -0.02em; }
+          .ph-sub { font-size: 0.72rem; opacity: 0.6; letter-spacing: 0.02em; }
           .ph-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; margin-bottom: 12px; }
           .ph-tile {
             background: color-mix(in srgb, var(--primary-color, #4caf50) 12%, transparent);
@@ -189,7 +192,13 @@
           .ph-empty { opacity: 0.6; padding: 8px 0; }
         </style>
         <div class="ph">
-          <div class="ph-title">PiHerder fleet</div>
+          <div class="ph-head">
+            <img class="ph-logo" src="/local/piherder-logo.png" alt="" width="36" height="36" />
+            <div>
+              <div class="ph-title">PiHerder</div>
+              <div class="ph-sub">Fleet</div>
+            </div>
+          </div>
           ${
             this._error
               ? `<div class="ph-err">${this._esc(this._error)}</div>`

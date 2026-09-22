@@ -1,6 +1,6 @@
 # PiHerder for Home Assistant
 
-[![Release](https://img.shields.io/badge/plugin-v0.2.3-green.svg)](https://github.com/bjorngluck/piherder-ha/releases/tag/v0.2.3)
+[![Release](https://img.shields.io/badge/plugin-v0.2.4-green.svg)](https://github.com/bjorngluck/piherder-ha/releases/tag/v0.2.4)
 [![PiHerder](https://img.shields.io/badge/PiHerder-v1.6%20train-blue.svg)](https://github.com/bjorngluck/piherder/blob/v1.6.0-dev/docs/PLAN_v1.6.0.md)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=fff)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-custom%20integration-orange.svg)](https://github.com/bjorngluck/piherder-ha)
@@ -12,7 +12,7 @@ HACS integration: Home Assistant **observes** a [PiHerder](https://github.com/bj
 
 This is **not** PiHerder managing HAOS over SSH. That stays in the PiHerder image ([HAOS hosts](https://github.com/bjorngluck/piherder/blob/v1.6.0-dev/wiki/day-to-day/haos-hosts.md)).
 
-**Plugin 0.2.3** (GitHub Release [`v0.2.3`](https://github.com/bjorngluck/piherder-ha/releases/tag/v0.2.3)). Needs a PiHerder on the **v1.6** train for container, service, and disk sensors. An older herder still shows Slice 1 (fleet + host + Visit); a 404 on `/inventory` or `/services` is ignored.
+**Plugin 0.2.4** (GitHub Release [`v0.2.4`](https://github.com/bjorngluck/piherder-ha/releases/tag/v0.2.4)). Needs a PiHerder on the **v1.6** train for container, service, and disk sensors. An older herder still shows Slice 1 (fleet + host + Visit); a 404 on `/inventory` or `/services` is ignored.
 
 The Lovelace card **PiHerder fleet** (`custom:piherder-dashboard-card`) shows fleet CPU, memory, disk, and containers. Expand a host for chips to Host / Docker / Backups / Alerts / Audit. The HA **device page** has one **Visit** (the host). Slice 1b adds **disk %**, one sensor per container (running / image / uptime text), and one sensor per monitored service (up/down) on that same host device. They are status only. Token **`read`**. Poll reads stored snapshots. It never SSHs the fleet.
 
@@ -27,15 +27,15 @@ The public docs site ([piherder-docs.hacknow.info](https://piherder-docs.hacknow
 1. In PiHerder: Settings → API management → token with **`read` only**. IP allowlist = this HA host. Token page: [API tokens](https://github.com/bjorngluck/piherder/blob/v1.6.0-dev/wiki/operations/api-tokens.md).
 2. HACS → custom repositories → [bjorngluck/piherder-ha](https://github.com/bjorngluck/piherder-ha) → Integration.
 3. Add **PiHerder**: base URL, `ph_…` token, TLS verify, poll interval. Wrong URL/token keeps the form filled.
-4. Confirm fleet **Plugin** is **0.2.3**. The fleet **Version** sensor is the PiHerder app (still **1.5.0** until that app is tagged).
+4. Confirm fleet **Plugin** is **0.2.4**. The fleet **Version** sensor is the PiHerder app (still **1.5.0** until that app is tagged).
 
-HACS does **not** auto-refresh custom repos. New GitHub Release: HACS → PiHerder → **⋮ → Redownload** → pick **`v0.2.3`** → **restart Home Assistant**. Reload of the config entry does not replace files.
+HACS does **not** auto-refresh custom repos. New GitHub Release: HACS → PiHerder → **⋮ → Redownload** → pick **`v0.2.4`** → **restart Home Assistant**. Reload of the config entry does not replace files.
 
 ## Fleet card
 
 After restart, the integration copies the card JS to Home Assistant `config/www/`.
 
-1. Dashboard **⋮ → Resources** — delete any `/api/piherder/…` or `?v=0.2.2` URL. Add **`/local/piherder-dashboard-card.js?v=0.2.3`** as **JavaScript module**.
+1. Dashboard **⋮ → Resources** — delete any `/api/piherder/…`, `?v=0.2.2`, or `?v=0.2.3` URL. Add **`/local/piherder-dashboard-card.js?v=0.2.4`** as **JavaScript module**. The card header shows the PiHerder logo from `/local/piherder-logo.png`.
 2. Hard-refresh the browser (Ctrl+Shift+R).
 3. Add card → **Manual**:
 
