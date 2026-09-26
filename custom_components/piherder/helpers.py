@@ -123,6 +123,88 @@ def alert_state(row: dict[str, Any] | None) -> str:
     return str(n)
 
 
+def memory_used_percent(row: dict[str, Any] | None) -> float | None:
+    raw = row or {}
+    try:
+        total = int(raw.get("memory_total_bytes") or 0)
+        used = int(raw.get("memory_used_bytes") or 0)
+    except (TypeError, ValueError):
+        return None
+    if total <= 0:
+        return None
+    return round(100.0 * used / total, 1)
+
+
+def cpu_load_value(row: dict[str, Any] | None) -> float | None:
+    raw = (row or {}).get("cpu_load")
+    if raw is None or raw == "":
+        return None
+    try:
+        return round(float(raw), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+# job_type, label, feature key, confirm before call
+CARD_JOBS = (
+    ("backup", "Backup", "backup", True),
+    ("retention", "Retention", "backup", True),
+    ("os_update_check", "Check OS", "os", False),
+    ("container_update_check", "Check containers", "docker", False),
+    ("os_patch", "Patch OS", "os", True),
+    ("container_patch", "Patch containers", "docker", True),
+    ("host_reboot", "Restart host", "os", True),
+)
+
+_FEATURE_FLAG = {"backup": "backup", "os": "os_patch", "docker": "docker"}
+
+
+def scopes_allow_feature(scopes: list | None, feature: str) -> bool:
+    """No feature:* scopes means every feature. Any feature:* limits to those."""
+    found = {str(s) for s in (scopes or [])}
+    limited = any(s.startswith("feature:") for s in found)
+    if not limited:
+        return True
+    return f"feature:{feature}" in found
+
+
+def card_actions(scopes: list | None, features: dict | None) -> list[dict[str, Any]]:
+    """Confirm buttons a token may show. A read token gets none."""
+    found = {str(s) for s in (scopes or [])}
+    if "jobs" not in found:
+        return []
+    flags = feature_flags({"features": features or {}})
+    out: list[dict[str, Any]] = []
+    for job_type, label, feature, confirm in CARD_JOBS:
+        if not scopes_allow_feature(found, feature):
+            continue
+        flag_key = _FEATURE_FLAG[feature]
+        if not flags.get(flag_key):
+            continue
+        out.append(
+            {
+                "job_type": job_type,
+                "label": label,
+                "feature": feature,
+                "confirm": confirm,
+            }
+        )
+    return out
+
+
+def card_toggles(scopes: list | None) -> list[dict[str, str]]:
+    """Feature toggles. Shown even when the flag is off, so it can be turned on."""
+    found = {str(s) for s in (scopes or [])}
+    if "edit" not in found:
+        return []
+    labels = (("backup", "Backup"), ("os", "OS patch"), ("docker", "Docker"))
+    return [
+        {"feature": key, "flag": _FEATURE_FLAG[key], "label": label}
+        for key, label in labels
+        if scopes_allow_feature(found, key)
+    ]
+
+
 def disk_used_percent(row: dict[str, Any] | None) -> float | None:
     raw = row or {}
     try:

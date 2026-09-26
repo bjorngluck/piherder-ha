@@ -3,10 +3,10 @@
   "name": "PiHerder",
   "codeowners": ["@bjorngluck"],
   "config_flow": true,
-  "documentation": "https://github.com/bjorngluck/piherder/blob/v1.6.0-dev/wiki/integrations/home-assistant.md",
+  "documentation": "https://github.com/bjorngluck/piherder/blob/v1.7.0-dev/wiki/integrations/home-assistant.md",
   "integration_type": "hub",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/bjorngluck/piherder-ha/issues",
   "requirements": [],
-  "version": "0.2.4"
+  "version": "0.3.0"
 }

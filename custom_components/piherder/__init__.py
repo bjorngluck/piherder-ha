@@ -12,10 +12,11 @@ import voluptuous as vol
 
 from .const import DOMAIN
 from .coordinator import PiHerderCoordinator
+from .services import async_register_services
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/local/piherder-dashboard-card.js?v=0.2.4"
+_CARD_URL = "/local/piherder-dashboard-card.js?v=0.3.0"
 
 
 class PiHerderCardView(http.HomeAssistantView):
@@ -117,6 +118,7 @@ def _purge_fake_link_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    async_register_services(hass)
     await _async_register_frontend(hass)
     _purge_fake_link_entities(hass, entry)
     coord = PiHerderCoordinator(hass, entry)

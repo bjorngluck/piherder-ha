@@ -23,6 +23,51 @@ def normalize_base_url(url: str) -> str:
     return raw
 
 
+JOB_TYPES = (
+    "backup",
+    "retention",
+    "os_update_check",
+    "container_update_check",
+    "os_patch",
+    "container_patch",
+    "host_reboot",
+)
+
+FEATURE_FIELDS = ("backup", "os_patch", "docker")
+
+
+async def _request_json(
+    session: aiohttp.ClientSession,
+    method: str,
+    url: str,
+    token: str,
+    *,
+    body: dict | None = None,
+    verify_ssl: bool = True,
+) -> tuple[int, Any]:
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    ssl: bool | None = None if verify_ssl else False
+    kwargs: dict[str, Any] = {"headers": headers, "ssl": ssl}
+    if aiohttp is not None:
+        kwargs["timeout"] = aiohttp.ClientTimeout(total=30)
+    if body is not None:
+        kwargs["json"] = body
+        headers["Content-Type"] = "application/json"
+    call = getattr(session, method.lower())
+    async with call(url, **kwargs) as resp:
+        text = await resp.text()
+        parsed: Any = None
+        if text:
+            try:
+                parsed = await resp.json(content_type=None)
+            except Exception:
+                parsed = {"detail": text[:300]}
+        return resp.status, parsed if parsed is not None else {}
+
+
 async def _get_json(
     session: aiohttp.ClientSession,
     url: str,
@@ -47,6 +92,67 @@ async def _get_json(
             return await resp.json(content_type=None)
         except Exception as exc:
             raise PiHerderApiError(resp.status, f"Invalid JSON: {exc}") from exc
+
+
+async def trigger_job(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    job_type: str,
+    *,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """POST a job. 202 accepted. 409 returns the job already running. Never SSH."""
+    kind = (job_type or "").strip().lower()
+    if kind not in JOB_TYPES:
+        raise PiHerderApiError(400, f"Unsupported job_type {kind}")
+    origin = normalize_base_url(base)
+    status, parsed = await _request_json(
+        session,
+        "post",
+        f"{origin}/api/v1/servers/{int(server_id)}/jobs",
+        token,
+        body={"job_type": kind},
+        verify_ssl=verify_ssl,
+    )
+    if not isinstance(parsed, dict):
+        parsed = {}
+    if status in (202, 409):
+        out = dict(parsed)
+        out["http_status"] = status
+        out["already_active"] = status == 409
+        return out
+    detail = parsed.get("detail") if isinstance(parsed, dict) else ""
+    raise PiHerderApiError(status, str(detail or "job failed")[:300])
+
+
+async def set_features(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    features: dict[str, bool],
+    *,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """PATCH backup / os_patch / docker. Other keys are dropped."""
+    body = {key: bool(features[key]) for key in FEATURE_FIELDS if key in features}
+    if not body:
+        raise PiHerderApiError(400, "No feature fields")
+    origin = normalize_base_url(base)
+    status, parsed = await _request_json(
+        session,
+        "patch",
+        f"{origin}/api/v1/servers/{int(server_id)}/features",
+        token,
+        body=body,
+        verify_ssl=verify_ssl,
+    )
+    if status < 400 and isinstance(parsed, dict):
+        return parsed
+    detail = parsed.get("detail") if isinstance(parsed, dict) else ""
+    raise PiHerderApiError(status, str(detail or "features failed")[:300])
 
 
 async def fetch_health(session: aiohttp.ClientSession, base: str, token: str, *, verify_ssl: bool = True) -> dict:

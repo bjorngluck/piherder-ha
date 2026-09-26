@@ -250,3 +250,406 @@ if (!window.customCards.some((c) => c.type === CARD)) {
   });
 }
 })();
+
+/* Host, updates, and resources cards. Writes go through HA services. */
+(function () {
+  const JOBS = [
+    ["backup", "Backup", "backup", true],
+    ["retention", "Retention", "backup", true],
+    ["os_update_check", "Check OS", "os", false],
+    ["container_update_check", "Check containers", "docker", false],
+    ["os_patch", "Patch OS", "os", true],
+    ["container_patch", "Patch containers", "docker", true],
+    ["host_reboot", "Restart host", "os", true],
+  ];
+  const FLAG = { backup: "backup", os: "os_patch", docker: "docker" };
+  const COLORS = { memory: "#e60012", disk: "#00a651", cpu: "#f5c542" };
+
+  function esc(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function allowFeature(scopes, feature) {
+    const found = new Set((scopes || []).map(String));
+    const limited = [...found].some((s) => s.startsWith("feature:"));
+    if (!limited) return true;
+    return found.has("feature:" + feature);
+  }
+
+  function actionsFor(scopes, features) {
+    const found = new Set((scopes || []).map(String));
+    if (!found.has("jobs")) return [];
+    const flags = features || {};
+    return JOBS.filter((row) => allowFeature(scopes, row[2]) && flags[FLAG[row[2]]]).map(
+      (row) => ({ job_type: row[0], label: row[1], feature: row[2], confirm: row[3] })
+    );
+  }
+
+  function togglesFor(scopes) {
+    const found = new Set((scopes || []).map(String));
+    if (!found.has("edit")) return [];
+    return [
+      ["backup", "Backup"],
+      ["os", "OS patch"],
+      ["docker", "Docker"],
+    ]
+      .filter((row) => allowFeature(scopes, row[0]))
+      .map((row) => ({ feature: row[0], flag: FLAG[row[0]], label: row[1] }));
+  }
+
+  function areaSvg(points, color) {
+    const nums = (points || []).map(Number).filter((n) => !Number.isNaN(n));
+    if (!nums.length) return `<div class="ph-empty">No history yet</div>`;
+    const w = 280;
+    const h = 72;
+    const max = Math.max(...nums, 1);
+    const step = nums.length === 1 ? 0 : w / (nums.length - 1);
+    const line = nums
+      .map((v, i) => {
+        const x = (i * step).toFixed(1);
+        const y = (h - (h * v) / max).toFixed(1);
+        return (i ? "L" : "M") + x + " " + y;
+      })
+      .join(" ");
+    const area = line + " L " + w + " " + h + " L 0 " + h + " Z";
+    return `<svg class="ph-area" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+      <path d="${area}" fill="${color}" opacity="0.28"></path>
+      <path d="${line}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+    </svg>`;
+  }
+
+  function metricEntity(hass, serverId, metric) {
+    const states = (hass && hass.states) || {};
+    for (const eid of Object.keys(states)) {
+      const attrs = (states[eid] && states[eid].attributes) || {};
+      if (String(attrs.server_id) === String(serverId) && attrs.piherder_metric === metric) return eid;
+    }
+    return null;
+  }
+
+  class PiHerderOperatorCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._kind = "host";
+      this._history = {};
+      this._note = "";
+    }
+
+    setConfig(config) {
+      this._config = config || {};
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+      if (!this._wired) {
+        this._wired = true;
+        this._tick();
+        this._timer = window.setInterval(() => this._tick(), 20000);
+      }
+    }
+
+    disconnectedCallback() {
+      if (this._timer) window.clearInterval(this._timer);
+    }
+
+    getCardSize() {
+      return this._kind === "resources" ? 6 : 5;
+    }
+
+    async _tick() {
+      if (!this._hass || !this._hass.connection) return;
+      try {
+        const res = await this._hass.connection.sendMessagePromise({ type: "piherder/snapshot" });
+        this._origin = (res && res.origin) || "";
+        this._data = (res && res.data) || {};
+        await this._loadHistory();
+        this._render();
+      } catch (err) {
+        this._error = String(err.message || err);
+        this._render();
+      }
+    }
+
+    _servers() {
+      const rows = ((this._data && this._data.servers) || []).slice();
+      const want = this._config && this._config.server_id;
+      if (want != null && want !== "") {
+        return rows.filter((s) => String(s.id) === String(want));
+      }
+      if (this._kind === "host") return rows.slice(0, 1);
+      return rows.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    }
+
+    _scopes() {
+      const health = (this._data && this._data.health) || {};
+      return health.scopes || [];
+    }
+
+    async _loadHistory() {
+      if (!this._hass || !this._hass.callWS) return;
+      const end = new Date();
+      const start = new Date(end.getTime() - 24 * 3600 * 1000);
+      for (const server of this._servers()) {
+        for (const metric of ["memory", "disk", "cpu"]) {
+          const eid = metricEntity(this._hass, server.id, metric);
+          const key = server.id + ":" + metric;
+          if (!eid) {
+            this._history[key] = [];
+            continue;
+          }
+          try {
+            const rows = await this._hass.callWS({
+              type: "history/history_during_period",
+              start_time: start.toISOString(),
+              end_time: end.toISOString(),
+              entity_ids: [eid],
+              minimal_response: true,
+              no_attributes: true,
+            });
+            const list = (rows && rows[0]) || [];
+            this._history[key] = list
+              .map((row) => Number(row.s != null ? row.s : row.state))
+              .filter((n) => !Number.isNaN(n));
+          } catch (err) {
+            this._history[key] = this._history[key] || [];
+          }
+        }
+      }
+    }
+
+    async _act(server, action) {
+      const name = server.name || server.hostname || "this host";
+      if (action.confirm) {
+        const text =
+          action.job_type === "host_reboot"
+            ? "Restart " +
+              name +
+              "? This reboots the machine. It will not start if a patch or backup is already running."
+            : action.label + " on " + name + "?";
+        if (!window.confirm(text)) return;
+      }
+      try {
+        await this._hass.callService("piherder", "trigger_job", {
+          server_id: server.id,
+          job_type: action.job_type,
+        });
+        this._note = action.label + " queued";
+      } catch (err) {
+        this._note = String(err.message || err);
+      }
+      this._render();
+    }
+
+    async _toggle(server, toggle) {
+      const flags = server.features || {};
+      const on = !!flags[toggle.flag];
+      const next = !on;
+      const name = server.name || "this host";
+      if (on && !window.confirm("Turn off " + toggle.label + " on " + name + "?")) return;
+      try {
+        await this._hass.callService("piherder", "set_features", {
+          server_id: server.id,
+          [toggle.flag]: next,
+        });
+        this._note = toggle.label + (next ? " on" : " off");
+      } catch (err) {
+        this._note = String(err.message || err);
+      }
+      this._render();
+    }
+
+    _styles() {
+      return `
+        :host { display:block; }
+        .ph {
+          background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
+          border-radius: var(--ha-card-border-radius, 12px);
+          border: 1px solid var(--divider-color, #333);
+          padding: 14px 16px 12px;
+          color: var(--primary-text-color, #eee);
+          font: 14px/1.4 var(--ha-font-family-body, system-ui, sans-serif);
+        }
+        .ph-title { font-weight: 650; font-size: 1.05rem; margin: 0; }
+        .ph-sub { font-size: 0.72rem; opacity: 0.65; }
+        .ph-pill { display:inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background:#e60012; color:#fff; font-size: 0.7rem; font-weight: 700; }
+        .ph-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+        .ph-tile { background: color-mix(in srgb, #00a651 14%, transparent); border-radius: 10px; padding: 8px; }
+        .ph-tile .n { font-size: 1.2rem; font-weight: 700; }
+        .ph-tile .l { font-size: 0.68rem; text-transform: uppercase; opacity: 0.7; }
+        .ph-area { width: 100%; height: 72px; display:block; margin-top: 4px; }
+        .ph-chart { margin: 8px 0 12px; }
+        .ph-actions, .ph-toggles { display:flex; flex-wrap:wrap; gap: 6px; margin-top: 8px; }
+        button.ph-btn, button.ph-tog {
+          border: 0; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 0.78rem; font-weight: 650;
+          cursor: pointer; color: #fff; background: #e60012;
+        }
+        button.ph-btn.quiet { background: color-mix(in srgb, #00a651 70%, #111); }
+        button.ph-tog { background: transparent; color: inherit; border: 1px solid var(--divider-color, #444); }
+        button.ph-tog.on { border-color: #00a651; color: #00a651; }
+        .ph-links { display:flex; flex-wrap:wrap; gap:6px; margin-top: 8px; }
+        .ph-chip { display:inline-block; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, #00a651 22%, transparent); color: inherit; text-decoration:none; font-size: 0.78rem; font-weight: 600; }
+        .ph-note { margin-top: 8px; font-size: 0.8rem; opacity: 0.85; }
+        .ph-empty, .ph-err { opacity: 0.7; }
+        .ph-err { color: #ff6b6b; opacity: 1; }
+      `;
+    }
+
+    _links(server) {
+      const id = server.id;
+      const f = server.features || {};
+      const base = (this._origin || "").replace(/\/$/, "");
+      const items = [
+        ["Host", base + "/servers/" + id],
+        f.docker ? ["Docker", base + "/servers/" + id + "/docker"] : null,
+        f.backup ? ["Backups", base + "/servers/" + id + "/backups"] : null,
+        ["Alerts", base + "/notifications?server_id=" + id],
+        ["Audit", base + "/audit?server_id=" + id],
+      ].filter(Boolean);
+      return `<div class="ph-links">${items
+        .map(([n, href]) => `<a class="ph-chip" href="${href}" target="_blank" rel="noopener">${n}</a>`)
+        .join("")}</div>`;
+    }
+
+    _buttons(server, actions) {
+      if (!actions.length) return "";
+      return `<div class="ph-actions">${actions
+        .map(
+          (a) =>
+            `<button type="button" class="ph-btn ${a.confirm ? "" : "quiet"}" data-job="${a.job_type}">${esc(a.label)}</button>`
+        )
+        .join("")}</div>`;
+    }
+
+    _toggleRow(server, toggles) {
+      if (!toggles.length) return "";
+      const flags = server.features || {};
+      return `<div class="ph-toggles">${toggles
+        .map(
+          (t) =>
+            `<button type="button" class="ph-tog ${flags[t.flag] ? "on" : ""}" data-flag="${t.flag}">${esc(t.label)}</button>`
+        )
+        .join("")}</div>`;
+    }
+
+    _charts(server, metrics) {
+      return metrics
+        .map((metric) => {
+          const key = server.id + ":" + metric;
+          const label = metric === "cpu" ? "CPU load" : metric === "disk" ? "Disk %" : "Memory %";
+          return `<div class="ph-chart"><div class="ph-sub">${label} · 24h</div>${areaSvg(this._history[key], COLORS[metric])}</div>`;
+        })
+        .join("");
+    }
+
+    _body() {
+      const servers = this._servers();
+      if (!servers.length) return `<div class="ph-empty">No host in this snapshot</div>`;
+      const scopes = this._scopes();
+      const actions = (server) => actionsFor(scopes, server.features);
+      const toggles = togglesFor(scopes);
+      if (this._kind === "updates") {
+        const rows = servers
+          .map((s) => {
+            const patch = actions(s).filter((a) =>
+              ["os_update_check", "container_update_check", "os_patch", "container_patch"].includes(a.job_type)
+            );
+            return `<div>
+              <div class="ph-title">${esc(s.name || s.hostname)}</div>
+              <div class="ph-grid">
+                <div class="ph-tile"><div class="n">${s.os_updates_count ?? 0}</div><div class="l">OS</div></div>
+                <div class="ph-tile"><div class="n">${s.container_updates_count ?? 0}</div><div class="l">Containers</div></div>
+                <div class="ph-tile"><div class="n">${s.reboot_pending ? "Yes" : "No"}</div><div class="l">Reboot</div></div>
+              </div>
+              ${this._buttons(s, patch)}
+            </div>`;
+          })
+          .join("");
+        return rows;
+      }
+      if (this._kind === "resources") {
+        return servers
+          .map(
+            (s) =>
+              `<div><div class="ph-title">${esc(s.name || s.hostname)}</div>${this._charts(s, ["memory", "disk", "cpu"])}</div>`
+          )
+          .join("");
+      }
+      const s = servers[0];
+      const mem = s.memory_total_bytes ? Math.round((100 * (s.memory_used_bytes || 0)) / s.memory_total_bytes) : "—";
+      const disk = s.disk_total_bytes ? Math.round((100 * (s.disk_used_bytes || 0)) / s.disk_total_bytes) : "—";
+      const load = s.cpu_load != null ? Number(s.cpu_load).toFixed(2) : "—";
+      return `
+        <div class="ph-title">${esc(s.name || s.hostname || "Host")}${s.reboot_pending ? `<span class="ph-pill">Reboot pending</span>` : ""}</div>
+        <div class="ph-sub">${esc(s.os_pretty || s.os_display || "")}</div>
+        <div class="ph-grid">
+          <div class="ph-tile"><div class="n">${load}</div><div class="l">CPU load</div></div>
+          <div class="ph-tile"><div class="n">${mem}${mem === "—" ? "" : "%"}</div><div class="l">Memory</div></div>
+          <div class="ph-tile"><div class="n">${disk}${disk === "—" ? "" : "%"}</div><div class="l">Disk</div></div>
+        </div>
+        ${this._charts(s, ["memory", "disk", "cpu"])}
+        ${this._links(s)}
+        ${this._buttons(s, actions(s))}
+        ${this._toggleRow(s, toggles)}
+      `;
+    }
+
+    _render() {
+      const titles = { host: "Host", updates: "Updates", resources: "Resources" };
+      this.shadowRoot.innerHTML = `
+        <style>${this._styles()}</style>
+        <div class="ph">
+          <div class="ph-sub">PiHerder · ${titles[this._kind]}</div>
+          ${this._error ? `<div class="ph-err">${esc(this._error)}</div>` : ""}
+          ${!this._data && !this._error ? `<div class="ph-empty">Waiting for PiHerder…</div>` : this._body()}
+          ${this._note ? `<div class="ph-note">${esc(this._note)}</div>` : ""}
+        </div>
+      `;
+      const servers = this._servers();
+      this.shadowRoot.querySelectorAll("button.ph-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const job = btn.getAttribute("data-job");
+          const server = servers.find((s) => btn.closest("div") && true) || servers[0];
+          const block = btn.parentElement && btn.parentElement.parentElement;
+          const title = block && block.querySelector(".ph-title");
+          const named = title ? servers.find((s) => (s.name || s.hostname) === title.textContent) : null;
+          const target = named || server;
+          const action = actionsFor(this._scopes(), target.features).find((a) => a.job_type === job);
+          if (action && target) this._act(target, action);
+        });
+      });
+      this.shadowRoot.querySelectorAll("button.ph-tog").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const flag = btn.getAttribute("data-flag");
+          const toggle = togglesFor(this._scopes()).find((t) => t.flag === flag);
+          const target = servers[0];
+          if (toggle && target) this._toggle(target, toggle);
+        });
+      });
+    }
+  }
+
+  function define(tag, kind, name, description) {
+    class Card extends PiHerderOperatorCard {
+      constructor() {
+        super();
+        this._kind = kind;
+      }
+      static getStubConfig() {
+        return kind === "host" ? { server_id: 1 } : {};
+      }
+    }
+    if (!customElements.get(tag)) customElements.define(tag, Card);
+    window.customCards = window.customCards || [];
+    if (!window.customCards.some((c) => c.type === tag)) {
+      window.customCards.push({ type: tag, name: name, description: description, preview: true });
+    }
+  }
+
+  define("piherder-host-card", "host", "PiHerder host", "One host, confirms, and feature toggles");
+  define("piherder-updates-card", "updates", "PiHerder updates", "OS and container update counts with check and patch");
+  define("piherder-resources-card", "resources", "PiHerder resources", "24h memory, disk, and CPU load");
+})();

@@ -19,7 +19,9 @@ from .helpers import (
     features_label,
     hardware_label,
     container_slug,
+    cpu_load_value,
     disk_used_percent,
+    memory_used_percent,
     host_urls,
     os_display,
     parse_utc,
@@ -64,6 +66,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             PiHerderHostRebootSensor(coord, entry, sid),
             PiHerderHostBackupSensor(coord, entry, sid),
             PiHerderHostDiskSensor(coord, entry, sid),
+            PiHerderHostMemorySensor(coord, entry, sid),
+            PiHerderHostCpuSensor(coord, entry, sid),
         ]
 
     def _discover() -> None:
@@ -380,10 +384,66 @@ class PiHerderHostDiskSensor(_HostBase):
         row = self._row()
         return {
             **super().extra_state_attributes,
+            "server_id": self._server_id,
+            "piherder_metric": "disk",
             "disk_used_bytes": row.get("disk_used_bytes"),
             "disk_total_bytes": row.get("disk_total_bytes"),
             "os_pretty": row.get("os_pretty"),
             "hardware": row.get("hardware"),
+        }
+
+
+class PiHerderHostMemorySensor(_HostBase):
+    """Memory used percent from the stored host-facts snapshot."""
+
+    _attr_name = "Memory"
+    _attr_icon = "mdi:memory"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator, entry, server_id: int) -> None:
+        super().__init__(coordinator, entry, server_id)
+        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_memory"
+
+    @property
+    def native_value(self):
+        return memory_used_percent(self._row())
+
+    @property
+    def extra_state_attributes(self):
+        row = self._row()
+        return {
+            **super().extra_state_attributes,
+            "server_id": self._server_id,
+            "piherder_metric": "memory",
+            "memory_used_bytes": row.get("memory_used_bytes"),
+            "memory_total_bytes": row.get("memory_total_bytes"),
+        }
+
+
+class PiHerderHostCpuSensor(_HostBase):
+    """CPU load average from the stored host-facts snapshot."""
+
+    _attr_name = "CPU load"
+    _attr_icon = "mdi:chip"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator, entry, server_id: int) -> None:
+        super().__init__(coordinator, entry, server_id)
+        self._attr_unique_id = f"{entry.entry_id}_host_{server_id}_cpu"
+
+    @property
+    def native_value(self):
+        return cpu_load_value(self._row())
+
+    @property
+    def extra_state_attributes(self):
+        row = self._row()
+        return {
+            **super().extra_state_attributes,
+            "server_id": self._server_id,
+            "piherder_metric": "cpu",
+            "cpu_cores": row.get("cpu_cores"),
         }
 
 
