@@ -3,7 +3,7 @@
   "name": "PiHerder",
   "codeowners": ["@bjorngluck"],
   "config_flow": true,
-  "documentation": "https://github.com/bjorngluck/piherder/blob/v1.7.0-dev/wiki/integrations/home-assistant.md",
+  "documentation": "https://piherder-docs.hacknow.info/integrations/home-assistant/",
   "integration_type": "hub",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/bjorngluck/piherder-ha/issues",
