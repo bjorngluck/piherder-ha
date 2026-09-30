@@ -151,6 +151,56 @@ def test_memory_and_cpu_from_snapshot():
     assert helpers.disk_used_percent(row) is None
 
 
+def test_pi5_ubuntu_mark_and_icons():
+    row = {
+        "hardware": "Raspberry Pi 5 Model B Rev 1.0",
+        "os_type": "ubuntu",
+        "os_pretty": "Ubuntu 24.04.1 LTS",
+    }
+    assert helpers.device_mark(row) == "5"
+    assert helpers.device_icon(row) == "mdi:raspberry-pi"
+    assert helpers.os_icon(row) == "mdi:ubuntu"
+    assert helpers.annotate_server(dict(row))["device_mark"] == "5"
+
+
+def test_other_boards_and_operating_systems():
+    assert helpers.device_mark({"hardware": "Raspberry Pi 400 Rev 1.0"}) == "400"
+    assert helpers.device_mark({"hardware": "Raspberry Pi Zero 2 W Rev 1.0"}) == "Zero 2"
+    assert helpers.device_mark({"hardware": "Raspberry Pi Compute Module 4 Rev 1.0"}) == "CM4"
+    assert helpers.device_icon({"hardware": "Intel NUC"}) == "mdi:server"
+    assert helpers.os_icon({"os_type": "haos", "os_pretty": "Home Assistant OS"}) == "mdi:home-assistant"
+    assert helpers.os_icon({"os_id": "raspbian", "os_pretty": "Raspberry Pi OS"}) == "mdi:debian"
+    assert helpers.os_icon({"os_type": "debian"}) == "mdi:debian"
+    assert helpers.os_icon({}) == "mdi:linux"
+
+
+def test_history_points_use_the_entity_map():
+    rows = {
+        "sensor.other": [{"s": "1"}],
+        "sensor.mem": [{"s": "40"}, {"state": "nope"}, {"s": "41.5"}],
+    }
+    assert helpers.history_points(rows, "sensor.mem") == [40.0, 41.5]
+    assert helpers.history_points([[{"state": "3"}]], "sensor.mem") == [3.0]
+    assert helpers.history_points(rows, "sensor.missing") == []
+    js = (_ROOT / "www" / "piherder-dashboard-card.js").read_text(encoding="utf-8")
+    assert "rows[eid]" in js
+    assert "rows[0]" in js
+
+
+def test_finished_jobs_skip_the_first_poll():
+    previous = {
+        "jobs": [
+            {"id": 9, "server_id": 4, "job_type": "backup", "status": "running"},
+            {"id": 10, "server_id": 4, "job_type": "os_patch", "status": "pending"},
+        ]
+    }
+    current = [{"id": 10, "server_id": 4, "job_type": "os_patch", "status": "pending"}]
+    left = helpers.finished_job_events(previous, current)
+    assert [row["id"] for row in left] == [9]
+    assert left[0]["job_type"] == "backup"
+    assert helpers.finished_job_events(None, current) == []
+
+
 def test_unknown_job_type_rejected():
     async def _run():
         with pytest.raises(client.PiHerderApiError):

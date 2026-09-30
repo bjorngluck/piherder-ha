@@ -343,6 +343,14 @@ class PiHerderHostRebootSensor(_HostBase):
     def native_value(self):
         return "yes" if self._row().get("reboot_pending") else "no"
 
+    @property
+    def extra_state_attributes(self):
+        return {
+            **super().extra_state_attributes,
+            "server_id": self._server_id,
+            "piherder_metric": "reboot",
+        }
+
 
 class PiHerderHostBackupSensor(_HostBase):
     _attr_name = "Last backup"
@@ -361,6 +369,14 @@ class PiHerderHostBackupSensor(_HostBase):
     @property
     def native_value(self):
         return backup_state(self._row())
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            **super().extra_state_attributes,
+            "server_id": self._server_id,
+            "piherder_metric": "backup",
+        }
 
 
 class PiHerderHostDiskSensor(_HostBase):

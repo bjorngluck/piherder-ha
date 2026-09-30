@@ -180,6 +180,7 @@ async def fetch_snapshot(
     servers = servers_raw.get("servers") if isinstance(servers_raw, dict) else []
     if not isinstance(servers, list):
         servers = []
+    servers = [_annotate_server(row) if isinstance(row, dict) else row for row in servers]
     jobs = jobs_raw.get("jobs") if isinstance(jobs_raw, dict) else []
     if not isinstance(jobs, list):
         jobs = []
@@ -242,6 +243,24 @@ async def _optional_object(
             raise
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _annotate_server(row: dict) -> dict:
+    """Load helpers beside this file so unit tests can import client alone."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    key = "_piherder_helpers_annot"
+    mod = sys.modules.get(key)
+    if mod is None:
+        path = Path(__file__).with_name("helpers.py")
+        spec = importlib.util.spec_from_file_location(key, path)
+        mod = importlib.util.module_from_spec(spec)
+        assert spec is not None and spec.loader is not None
+        sys.modules[key] = mod
+        spec.loader.exec_module(mod)
+    return mod.annotate_server(row)
 
 
 def derive_summary(servers: list, jobs: list, *, version: str | None) -> dict[str, Any]:

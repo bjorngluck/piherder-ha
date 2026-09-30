@@ -1,6 +1,7 @@
 """Pure helpers for HA entities (no Home Assistant imports)."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -203,6 +204,106 @@ def card_toggles(scopes: list | None) -> list[dict[str, str]]:
         for key, label in labels
         if scopes_allow_feature(found, key)
     ]
+
+
+_DEVICE_MARKS = (
+    (re.compile(r"compute module\s*5|\bcm\s*5\b"), "CM5"),
+    (re.compile(r"compute module\s*4|\bcm\s*4\b"), "CM4"),
+    (re.compile(r"\b(?:raspberry\s*)?pi\s*500\b"), "500"),
+    (re.compile(r"\b(?:raspberry\s*)?pi\s*400\b"), "400"),
+    (re.compile(r"\bzero\s*2\b"), "Zero 2"),
+    (re.compile(r"\b(?:pi\s*)?zero(?:\s*w)?\b|\brpi\s*zero\b"), "Zero"),
+    (re.compile(r"\b(?:raspberry\s*)?pi\s*5\b|\brpi\s*5\b"), "5"),
+    (re.compile(r"\b(?:raspberry\s*)?pi\s*4\b|\brpi\s*4\b"), "4"),
+    (re.compile(r"\b(?:raspberry\s*)?pi\s*3\b|\brpi\s*3\b"), "3"),
+    (re.compile(r"\b(?:raspberry\s*)?pi\s*2\b|\brpi\s*2\b"), "2"),
+    (re.compile(r"\b(?:raspberry\s*)?pi\s*1\b|\brpi\s*1\b"), "1"),
+)
+
+
+def device_mark(row: dict[str, Any] | None) -> str | None:
+    """Short Raspberry Pi model parsed from the stored hardware string."""
+    hw = str((row or {}).get("hardware") or "").lower()
+    if not hw:
+        return None
+    for pattern, mark in _DEVICE_MARKS:
+        if pattern.search(hw):
+            return mark
+    if "raspberry" in hw or re.search(r"\brpi\b", hw):
+        return "Pi"
+    return None
+
+
+def device_icon(row: dict[str, Any] | None) -> str:
+    if device_mark(row):
+        return "mdi:raspberry-pi"
+    return "mdi:server"
+
+
+def os_icon(row: dict[str, Any] | None) -> str:
+    raw = row or {}
+    blob = " ".join(
+        str(raw.get(key) or "") for key in ("os_id", "os_type", "os_pretty", "os_display")
+    ).lower()
+    if "haos" in blob or "home assistant" in blob:
+        return "mdi:home-assistant"
+    if "ubuntu" in blob:
+        return "mdi:ubuntu"
+    if any(token in blob for token in ("raspbian", "raspberry pi os", "debian", "raspberrypi")):
+        return "mdi:debian"
+    return "mdi:linux"
+
+
+def annotate_server(row: dict[str, Any]) -> dict[str, Any]:
+    """Icon fields the Lovelace card reads. No new herder column."""
+    row["device_icon"] = device_icon(row)
+    row["device_mark"] = device_mark(row) or ""
+    row["os_icon"] = os_icon(row)
+    return row
+
+
+def history_points(rows: Any, entity_id: str) -> list[float]:
+    """Numeric series from a history websocket payload.
+
+    Home Assistant returns a map keyed by entity id. A list is the older shape,
+    one series in request order, so the first entry is the fallback.
+    """
+    series: Any = None
+    if isinstance(rows, dict):
+        series = rows.get(entity_id)
+    elif isinstance(rows, list) and rows:
+        series = rows[0]
+    if not isinstance(series, list):
+        return []
+    out: list[float] = []
+    for item in series:
+        raw = item.get("s", item.get("state")) if isinstance(item, dict) else item
+        try:
+            out.append(float(raw))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def jobs_left_active(previous: list | None, current: list | None) -> list[dict[str, Any]]:
+    """Jobs present in the previous active set and absent from the current one."""
+    prev: dict[Any, dict[str, Any]] = {}
+    for job in previous or []:
+        if isinstance(job, dict) and job.get("id") is not None:
+            prev[job["id"]] = job
+    current_ids = {
+        job.get("id")
+        for job in (current or [])
+        if isinstance(job, dict) and job.get("id") is not None
+    }
+    return [prev[job_id] for job_id in prev if job_id not in current_ids]
+
+
+def finished_job_events(previous: dict | None, jobs: list | None) -> list[dict[str, Any]]:
+    """Empty on the first poll. After that, ids that left the active set."""
+    if not isinstance(previous, dict):
+        return []
+    return jobs_left_active(previous.get("jobs"), jobs)
 
 
 def disk_used_percent(row: dict[str, Any] | None) -> float | None:

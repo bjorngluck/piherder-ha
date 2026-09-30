@@ -1,6 +1,6 @@
 # PiHerder for Home Assistant
 
-[![Release](https://img.shields.io/badge/plugin-v0.3.0-green.svg)](https://github.com/bjorngluck/piherder-ha)
+[![Release](https://img.shields.io/badge/plugin-v0.4.0-green.svg)](https://github.com/bjorngluck/piherder-ha)
 [![PiHerder](https://img.shields.io/badge/PiHerder-v1.7.0-blue.svg)](https://github.com/bjorngluck/piherder/releases/tag/v1.7.0)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=fff)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-custom%20integration-orange.svg)](https://github.com/bjorngluck/piherder-ha)
@@ -12,9 +12,9 @@ HACS integration: Home Assistant **observes** a [PiHerder](https://github.com/bj
 
 This is **not** PiHerder managing HAOS over SSH. That stays in the PiHerder image ([HAOS hosts](https://piherder-docs.hacknow.info/day-to-day/haos-hosts/)). Needs PiHerder **[v1.7.0](https://github.com/bjorngluck/piherder/releases/tag/v1.7.0)** for `host_reboot`. An older herder still shows the read-only fleet card.
 
-**Plugin 0.3.0** on this repo’s `main` branch. It targets PiHerder **[v1.7.0](https://github.com/bjorngluck/piherder/blob/v1.7.0/docs/RELEASE_v1.7.0.md)**. A 404 on `/inventory` or `/services` from an older herder is ignored.
+**Plugin 0.4.0** on this repo. It targets PiHerder **[v1.7.0](https://github.com/bjorngluck/piherder/blob/v1.7.0/docs/RELEASE_v1.7.0.md)** or newer. A 404 on `/inventory` or `/services` from an older herder is ignored. The GitHub Release tag is cut when this repo is tagged; until then HACS still offers **0.3.0**.
 
-The Lovelace card **PiHerder fleet** (`custom:piherder-dashboard-card`) shows fleet CPU, memory, disk, and containers. Expand a host for chips to Host / Docker / Backups / Alerts / Audit. **0.3.0** adds a host card, an updates card, and a resources card (24h graphs from Home Assistant history of the snapshot sensors). Confirm buttons call Home Assistant services. The token stays on the integration. A `read` token shows no buttons. The HA **device page** has one **Visit** (the host). Sensors include disk %, memory %, CPU load, one sensor per container, and one sensor per monitored service. Poll reads stored snapshots. It never SSHs the fleet.
+The Lovelace card is one module with **Fleet**, **Host**, and **Updates** tabs. A host strip picks the machine (a Raspberry Pi mark and an OS icon). Click memory, disk, or CPU load to open that sensor’s Home Assistant history. **Backup** is the face button. The other confirms are an **Actions** menu. A `read` token shows no job buttons. The older card names (`piherder-host-card`, `piherder-updates-card`, `piherder-resources-card`) still load. The HA **device page** has one **Visit** (the host). Sensors include disk %, memory %, CPU load, one sensor per container, and one sensor per monitored service. Poll reads stored snapshots. It never SSHs the fleet. When a job the plugin was watching leaves the active set, Home Assistant gets `piherder_job_completed`.
 
 No container start/stop, Move, Files, or console from HA. An automation can call `piherder.trigger_job` without the card dialog.
 
@@ -25,15 +25,15 @@ Full steps, with the card resource and what each HA screen means: **[Home Assist
 1. In PiHerder: Settings → API management → token with **`read`**. Add **`jobs`** and **`edit`** if you want the confirm buttons and feature toggles. IP allowlist = this HA host. Token page: [API tokens](https://piherder-docs.hacknow.info/operations/api-tokens/).
 2. HACS → custom repositories → [bjorngluck/piherder-ha](https://github.com/bjorngluck/piherder-ha) → Integration.
 3. Add **PiHerder**: base URL, `ph_…` token, TLS verify, poll interval. Wrong URL/token keeps the form filled.
-4. Confirm fleet **Plugin** is **0.3.0**. The fleet **Version** sensor is the PiHerder app (**1.7.0**).
+4. Confirm fleet **Plugin** is **0.4.0**. The fleet **Version** sensor is the PiHerder app (**1.7.0** until the herder tags 1.8.0).
 
-HACS does **not** auto-refresh custom repos. After this branch moves: HACS → PiHerder → **⋮ → Redownload** → **restart Home Assistant**. Once `v0.3.0` is tagged, pick that tag. Reload of the config entry does not replace files.
+HACS does **not** auto-refresh custom repos. After this branch moves: HACS → PiHerder → **⋮ → Redownload** → **restart Home Assistant**. Once `v0.4.0` is tagged, pick that tag. Reload of the config entry does not replace files.
 
 ## Fleet card
 
 After restart, the integration copies the card JS to Home Assistant `config/www/`.
 
-1. Dashboard **⋮ → Resources** — delete any `/api/piherder/…`, `?v=0.2.2`, `?v=0.2.3`, or `?v=0.2.4` URL. Add **`/local/piherder-dashboard-card.js?v=0.3.0`** as **JavaScript module**. The card header shows the PiHerder logo from `/local/piherder-logo.png`.
+1. Dashboard **⋮ → Resources** — delete any `/api/piherder/…`, `?v=0.2.2`, `?v=0.2.3`, `?v=0.2.4`, or `?v=0.3.0` URL. Add **`/local/piherder-dashboard-card.js?v=0.4.0`** as **JavaScript module**. The card header shows the PiHerder logo from `/local/piherder-logo.png`.
 2. Hard-refresh the browser (Ctrl+Shift+R).
 3. Add card → **Manual**:
 
@@ -59,7 +59,7 @@ server_id: 1
 
 “Custom element doesn’t exist” = stale resource URL, resource type is JavaScript instead of module, or HA was not restarted after Redownload.
 
-CPU, memory, and disk numbers come from PiHerder **[System Info](https://piherder-docs.hacknow.info/day-to-day/system-info/)** (a stored host snapshot, not live SSH). Recreate PiHerder **web** on **1.7.0**, then the System Info refresh icon (or wait ~15 minutes). Empty bars mean the herder has no snapshot yet. The 24-hour chart on the 0.3.0 cards does not draw; that is carried to the next PiHerder release.
+CPU, memory, and disk numbers come from PiHerder **[System Info](https://piherder-docs.hacknow.info/day-to-day/system-info/)** (a stored host snapshot, not live SSH). Recreate PiHerder **web** on **1.7.0**, then the System Info refresh icon (or wait ~15 minutes). Empty bars mean the herder has no snapshot yet. Click a stat to open Home Assistant’s history for that sensor. The thin sparkline uses the same history.
 
 ## Wiki
 

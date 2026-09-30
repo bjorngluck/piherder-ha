@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .client import PiHerderApiError, fetch_snapshot, normalize_base_url
 from .const import CONF_SCAN_INTERVAL, CONF_VERIFY_SSL, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .helpers import finished_job_events
 
 
 class PiHerderCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -30,7 +31,7 @@ class PiHerderCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         verify = bool(self.entry.data.get(CONF_VERIFY_SSL, True))
         session = async_get_clientsession(self.hass, verify_ssl=verify)
         try:
-            return await fetch_snapshot(
+            data = await fetch_snapshot(
                 session,
                 self.origin,
                 self.entry.data[CONF_TOKEN],
@@ -40,3 +41,15 @@ class PiHerderCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(exc.message) from exc
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
+        previous = self.data if isinstance(self.data, dict) else None
+        for job in finished_job_events(previous, data.get("jobs")):
+            self.hass.bus.async_fire(
+                "piherder_job_completed",
+                {
+                    "job_id": job.get("id"),
+                    "server_id": job.get("server_id"),
+                    "job_type": job.get("job_type"),
+                    "status": job.get("status"),
+                },
+            )
+        return data
