@@ -150,6 +150,9 @@
       this._menu = "";
       this._selectedId = null;
       this._focusStats = false;
+      this._open = [];
+      this._restored = false;
+      this._painted = false;
     }
 
     setConfig(config) {
@@ -170,9 +173,41 @@
     }
 
     getCardSize() {
-      if (this._tab === "fleet") return 8;
-      if (this._tab === "updates") return 5;
-      return 7;
+      // One size. A change here makes Lovelace rebuild the card and drop the host.
+      return 8;
+    }
+
+    _viewKey() {
+      const pin = this._config && this._config.server_id != null && this._config.server_id !== ""
+        ? String(this._config.server_id)
+        : "";
+      return "piherder-card:" + (this._kind || "fleet") + ":" + pin;
+    }
+
+    _restore() {
+      if (this._restored) return;
+      this._restored = true;
+      try {
+        const raw = window.sessionStorage.getItem(this._viewKey());
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved.tab === "fleet" || saved.tab === "host" || saved.tab === "updates") this._tab = saved.tab;
+        if (saved.selectedId) this._selectedId = String(saved.selectedId);
+        if (Array.isArray(saved.open)) this._open = saved.open.filter((name) => typeof name === "string");
+      } catch (err) {
+        /* private mode or a bad value */
+      }
+    }
+
+    _persist() {
+      try {
+        window.sessionStorage.setItem(
+          this._viewKey(),
+          JSON.stringify({ tab: this._tab, selectedId: this._selectedId, open: this._open })
+        );
+      } catch (err) {
+        /* private mode */
+      }
     }
 
     async _tick() {
@@ -641,6 +676,16 @@
     }
 
     _render() {
+      this._restore();
+      const y = window.scrollY;
+      if (this._painted) {
+        const openNow = [];
+        this.shadowRoot.querySelectorAll("details[open] > summary").forEach((summary) => {
+          const name = (summary.textContent || "").trim();
+          if (name) openNow.push(name);
+        });
+        this._open = openNow;
+      }
       const titles = { fleet: "Fleet", host: "Host", updates: "Updates" };
       const tabs = ["fleet", "host", "updates"]
         .map(
@@ -664,6 +709,13 @@
           ${this._note ? `<div class="ph-note">${esc(this._note)}</div>` : ""}
         </div>
       `;
+      this.shadowRoot.querySelectorAll("details > summary").forEach((summary) => {
+        const name = (summary.textContent || "").trim();
+        if (this._open.indexOf(name) !== -1) summary.parentElement.open = true;
+      });
+      this._painted = true;
+      this._persist();
+      if (y) window.scrollTo(0, y);
       this.shadowRoot.querySelectorAll("[data-tab]").forEach((btn) => {
         btn.addEventListener("click", () => {
           this._tab = btn.getAttribute("data-tab");

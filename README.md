@@ -1,6 +1,6 @@
 # PiHerder for Home Assistant
 
-[![Release](https://img.shields.io/badge/plugin-v0.4.1-green.svg)](https://github.com/bjorngluck/piherder-ha/releases)
+[![Release](https://img.shields.io/badge/plugin-v0.4.2-green.svg)](https://github.com/bjorngluck/piherder-ha/releases)
 [![PiHerder](https://img.shields.io/badge/PiHerder-v1.7.0-blue.svg)](https://github.com/bjorngluck/piherder/releases/tag/v1.7.0)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=fff)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-custom%20integration-orange.svg)](https://github.com/bjorngluck/piherder-ha)
@@ -12,7 +12,7 @@ HACS integration: Home Assistant **observes** a [PiHerder](https://github.com/bj
 
 This is **not** PiHerder managing HAOS over SSH. That stays in the PiHerder image ([HAOS hosts](https://piherder-docs.hacknow.info/day-to-day/haos-hosts/)). Needs PiHerder **[v1.7.0](https://github.com/bjorngluck/piherder/releases/tag/v1.7.0)** for `host_reboot`. An older herder still shows the read-only fleet card.
 
-**Plugin 0.4.1** is this build. HACS lists it only after the **v0.4.1** GitHub Release. A push to `main` without a `v*` tag leaves the previous release in the list. It targets PiHerder **[v1.7.0](https://github.com/bjorngluck/piherder/blob/v1.7.0/docs/RELEASE_v1.7.0.md)** or newer for the fleet card. Start and stop of one container need the v1.8 herder jobs `container_start` and `container_stop`. A 1.7 herder answers **400** for those two. A 404 on `/inventory` or `/services` from an older herder is ignored.
+**Plugin 0.4.2** is this build. HACS lists it only after the **v0.4.2** GitHub Release. A push to `main` without a `v*` tag leaves the previous release in the list. The card keeps the tab, the selected host, and open sections when it redraws. It targets PiHerder **[v1.7.0](https://github.com/bjorngluck/piherder/blob/v1.7.0/docs/RELEASE_v1.7.0.md)** or newer for the fleet card. Start and stop of one container need the v1.8 herder jobs `container_start` and `container_stop`. A 1.7 herder answers **400** for those two. A 404 on `/inventory` or `/services` from an older herder is ignored.
 
 The Lovelace card is one module with **Fleet**, **Host**, and **Updates** tabs. A host strip picks the machine (a Raspberry Pi mark and an OS icon). Click memory, disk, or CPU load to open that sensor’s Home Assistant history. **Backup** is the face button. The other confirms are an **Actions** menu. **Containers** on the Host tab lists the last inventory. **Start** or **Stop** runs `docker compose` for that one service after a confirm. A container with no compose directory or service name has no button. A `read` token shows no job buttons. The older card names (`piherder-host-card`, `piherder-updates-card`, `piherder-resources-card`) still load. The HA **device page** has one **Visit** (the host). Sensors include disk %, memory %, CPU load, one sensor per container, and one sensor per monitored service. Poll reads stored snapshots. It never SSHs the fleet. When a job the plugin was watching leaves the active set, Home Assistant gets `piherder_job_completed`.
 
@@ -25,15 +25,15 @@ Full steps, with the card resource and what each HA screen means: **[Home Assist
 1. In PiHerder: Settings → API management → token with **`read`**. Add **`jobs`** and **`edit`** if you want the confirm buttons and feature toggles. IP allowlist = this HA host. Token page: [API tokens](https://piherder-docs.hacknow.info/operations/api-tokens/).
 2. HACS → custom repositories → [bjorngluck/piherder-ha](https://github.com/bjorngluck/piherder-ha) → Integration.
 3. Add **PiHerder**: base URL, `ph_…` token, TLS verify, poll interval. Wrong URL/token keeps the form filled.
-4. Confirm fleet **Plugin** is **0.4.1**. The fleet **Version** sensor is the PiHerder app (**1.7.0** until the herder tags 1.8.0).
+4. Confirm fleet **Plugin** is **0.4.2**. The fleet **Version** sensor is the PiHerder app (**1.7.0** until the herder tags 1.8.0).
 
-HACS does **not** auto-refresh custom repos. Pick **v0.4.1**, then **restart Home Assistant**. Reload of the config entry does not replace the card file.
+HACS does **not** auto-refresh custom repos. Pick **v0.4.2**, then **restart Home Assistant**. Reload of the config entry does not replace the card file.
 
 ## Fleet card
 
 After restart, the integration copies the card JS to Home Assistant `config/www/`.
 
-1. Dashboard **⋮ → Resources** — delete any `/api/piherder/…`, `?v=0.2.2`, `?v=0.2.3`, `?v=0.2.4`, `?v=0.3.0`, or `?v=0.4.0` URL. Add **`/local/piherder-dashboard-card.js?v=0.4.1`** as **JavaScript module**. The card header shows the PiHerder logo from `/local/piherder-logo.png`.
+1. Dashboard **⋮ → Resources** — delete any `/api/piherder/…`, `?v=0.2.2`, `?v=0.2.3`, `?v=0.2.4`, `?v=0.3.0`, `?v=0.4.0`, or `?v=0.4.1` URL. Add **`/local/piherder-dashboard-card.js?v=0.4.2`** as **JavaScript module**. The card header shows the PiHerder logo from `/local/piherder-logo.png`.
 2. Hard-refresh the browser (Ctrl+Shift+R).
 3. Add card → **Manual**:
 
