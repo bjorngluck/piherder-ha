@@ -33,6 +33,8 @@ JOB_TYPES = (
     "host_reboot",
     "container_start",
     "container_stop",
+    "container_restart",
+    "container_redeploy",
 )
 
 FEATURE_FIELDS = ("backup", "os_patch", "docker")
@@ -112,12 +114,12 @@ async def trigger_job(
     if kind not in JOB_TYPES:
         raise PiHerderApiError(400, f"Unsupported job_type {kind}")
     body: dict[str, Any] = {"job_type": kind}
-    if kind in ("container_start", "container_stop"):
+    if kind in ("container_start", "container_stop", "container_restart", "container_redeploy"):
         path = (source_filter or "").strip()
         svc = (service or "").strip()
         if not path or not svc:
             raise PiHerderApiError(
-                400, "container start and stop need a compose directory and a service name"
+                400, "container start, stop, restart, and update need a compose directory and a service name"
             )
         body["source_filter"] = path
         body["service"] = svc

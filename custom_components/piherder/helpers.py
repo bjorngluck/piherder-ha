@@ -201,21 +201,35 @@ def container_controls_allowed(scopes: list | None, features: dict | None) -> bo
     return bool(feature_flags({"features": features or {}}).get("docker"))
 
 
-def container_action(row: dict | None) -> dict[str, str] | None:
-    """One service. No path or service name means no button (orphan or whole project)."""
+def container_actions(row: dict | None) -> list[dict[str, str]]:
+    """One service. Running: Stop and Restart. Stopped: Start. An image update adds Update."""
     raw = row or {}
     path = str(raw.get("path") or "").strip()
     service = str(raw.get("service") or "").strip()
     if not path or not service:
-        return None
-    running = bool(raw.get("running"))
-    return {
-        "job_type": "container_stop" if running else "container_start",
-        "path": path,
-        "service": service,
-        "name": str(raw.get("name") or service),
-        "label": "Stop" if running else "Start",
-    }
+        return []
+    name = str(raw.get("name") or service)
+    pending = bool(raw.get("update") or raw.get("has_pending_update"))
+    if raw.get("running"):
+        actions = [
+            {"job_type": "container_stop", "action": "stop", "label": "Stop"},
+            {"job_type": "container_restart", "action": "restart", "label": "Restart"},
+        ]
+    else:
+        actions = [{"job_type": "container_start", "action": "start", "label": "Start"}]
+    if pending:
+        actions.append({"job_type": "container_redeploy", "action": "redeploy", "label": "Update"})
+    for action in actions:
+        action["path"] = path
+        action["service"] = service
+        action["name"] = name
+    return actions
+
+
+def container_action(row: dict | None) -> dict[str, str] | None:
+    """First button for one service, or none. Kept for callers that want a single action."""
+    actions = container_actions(row)
+    return actions[0] if actions else None
 
 
 def card_toggles(scopes: list | None) -> list[dict[str, str]]:

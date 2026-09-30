@@ -61,7 +61,28 @@
     const host = hosts.find((h) => String(h.server_id) === String(serverId));
     return ((host && host.containers) || [])
       .slice()
-      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+      .sort((a, b) => {
+        const due = (b.update ? 1 : 0) - (a.update ? 1 : 0);
+        if (due) return due;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+  }
+
+  function updateBits(server) {
+    const os = Number(server.os_updates_count || 0);
+    const ctr = Number(server.container_updates_count || 0);
+    const bits = [];
+    if (os) bits.push({ text: os === 1 ? "1 OS update" : os + " OS updates", warn: true });
+    if (ctr) bits.push({ text: ctr === 1 ? "1 container update" : ctr + " container updates", warn: true });
+    if (server.reboot_pending) bits.push({ text: "reboot pending", warn: true });
+    if (!bits.length) bits.push({ text: "Up to date", warn: false });
+    return bits;
+  }
+
+  function updatePills(server) {
+    return updateBits(server)
+      .map((bit) => `<span class="ph-pill${bit.warn ? " warn" : ""}">${esc(bit.text)}</span>`)
+      .join("");
   }
 
   function actionsFor(scopes, features) {
@@ -316,28 +337,33 @@
     }
 
     async _container(server, btn) {
-      const act = btn.getAttribute("data-ctr-act") === "stop" ? "stop" : "start";
+      const act = btn.getAttribute("data-ctr-act") || "";
+      const jobs = {
+        stop: "container_stop",
+        start: "container_start",
+        restart: "container_restart",
+        redeploy: "container_redeploy",
+      };
+      const verbs = { stop: "Stop", start: "Start", restart: "Restart", redeploy: "Update" };
+      const notes = {
+        stop: "This runs docker compose stop for that service. Other containers stay as they are.",
+        start: "This runs docker compose start for that service. Other containers stay as they are.",
+        restart: "This runs docker compose restart for that service. Other containers stay as they are.",
+        redeploy: "This pulls the image and recreates that one service. Other containers stay as they are.",
+      };
+      if (!jobs[act]) return;
       const name = btn.getAttribute("data-ctr-name") || "this container";
       const host = server.name || server.hostname || "this host";
-      const verb = act === "stop" ? "Stop" : "Start";
-      const text =
-        verb +
-        " " +
-        name +
-        " on " +
-        host +
-        "? This runs docker compose " +
-        act +
-        " for that service. Other containers in the project stay as they are.";
+      const text = verbs[act] + " " + name + " on " + host + "? " + notes[act];
       if (!window.confirm(text)) return;
       try {
         await this._hass.callService("piherder", "trigger_job", {
           server_id: server.id,
-          job_type: act === "stop" ? "container_stop" : "container_start",
+          job_type: jobs[act],
           source_filter: btn.getAttribute("data-ctr-path"),
           service: btn.getAttribute("data-ctr-svc"),
         });
-        this._note = verb + " " + name + " queued";
+        this._note = verbs[act] + " " + name + " queued";
       } catch (err) {
         this._note = String(err.message || err);
       }
@@ -348,25 +374,40 @@
       const rows = containersOf(this._data, server.id);
       if (!rows.length) return "";
       const allow = containerControl(this._scopes(), server.features);
+      const due = rows.filter((c) => c.update).length;
       const body = rows
         .map((c) => {
           const name = c.name || c.service || "container";
           const state = c.running ? "running" : c.state || "exited";
           const path = String(c.path || "").trim();
           const service = String(c.service || "").trim();
-          const act = c.running ? "stop" : "start";
-          const btn =
+          const buttons =
             allow && path && service
-              ? `<button type="button" data-ctr-act="${act}" data-ctr-path="${esc(path)}" data-ctr-svc="${esc(
-                  service
-                )}" data-ctr-name="${esc(name)}">${c.running ? "Stop" : "Start"}</button>`
+              ? (c.running
+                  ? [
+                      ["stop", "Stop", ""],
+                      ["restart", "Restart", ""],
+                    ]
+                  : [["start", "Start", ""]]
+                )
+                  .concat(c.update ? [["redeploy", "Update", "due"]] : [])
+                  .map(
+                    ([act, label, extra]) =>
+                      `<button type="button" class="${extra}" data-ctr-act="${act}" data-ctr-path="${esc(
+                        path
+                      )}" data-ctr-svc="${esc(service)}" data-ctr-name="${esc(name)}">${label}</button>`
+                  )
+                  .join("")
               : "";
-          return `<div class="ph-ctr"><span class="ph-ctr-name">${esc(name)}</span><span class="ph-ctr-state">${esc(
-            state
-          )}</span>${btn}</div>`;
+          return `<div class="ph-ctr"><span class="ph-ctr-name${c.update ? " due" : ""}">${esc(
+            name
+          )}</span><span class="ph-ctr-state">${esc(state)}${
+            c.update ? " · update" : ""
+          }</span>${buttons}</div>`;
         })
         .join("");
-      return `<details class="ph-features"><summary>Containers</summary><div class="ph-ctr-list">${body}</div></details>`;
+      const summary = due ? `Containers · ${due === 1 ? "1 update" : due + " updates"}` : "Containers";
+      return `<details class="ph-features" data-section="containers"><summary class="${due ? "due" : ""}">${summary}</summary><div class="ph-ctr-list">${body}</div></details>`;
     }
 
     async _toggle(server, toggle) {
@@ -414,7 +455,7 @@
         .ph-tile .l { font-size: 0.68rem; text-transform: uppercase; opacity: 0.7; }
         .ph-strip { display:flex; gap:8px; overflow-x:auto; padding-bottom: 8px; margin-bottom: 8px; }
         .ph-host, .ph-row {
-          display:flex; align-items:center; gap:10px; width:100%;
+          display:flex; align-items:center; flex-wrap:wrap; gap:10px; width:100%;
           background: none; border: 0; border-top: 1px solid var(--divider-color, #333);
           color: inherit; font: inherit; text-align: left; padding: 10px 2px; cursor: pointer;
         }
@@ -459,22 +500,32 @@
         .ph-menu button:hover, .ph-menu a:hover { background: color-mix(in srgb, #e60012 22%, transparent); }
         details.ph-features { margin-top: 8px; }
         details.ph-features summary { cursor: pointer; font-size: 0.8rem; opacity: 0.8; }
+        details.ph-features summary.due { color: color-mix(in srgb, #f5c542 62%, var(--primary-text-color, #eee)); opacity: 1; font-weight: 700; }
         .ph-toggles { display:flex; flex-wrap:wrap; gap: 6px; margin-top: 6px; }
         button.ph-tog { background: transparent; color: inherit; border: 1px solid var(--divider-color, #444); border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 0.78rem; cursor: pointer; }
         button.ph-tog.on { border-color: #00a651; color: #00a651; }
         .ph-ctr { display:flex; align-items:center; gap: 8px; padding: 4px 0; }
         .ph-ctr-name { font-weight: 650; }
+        .ph-ctr-name.due { color: color-mix(in srgb, #f5c542 62%, var(--primary-text-color, #eee)); }
         .ph-ctr-state { opacity: 0.7; font-size: 0.78rem; margin-right: auto; }
         .ph-ctr button {
           border: 0; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 0.75rem; font-weight: 650;
           cursor: pointer; color: #fff; background: color-mix(in srgb, #00a651 70%, #111);
         }
-        .ph-pill { display:inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background:#e60012; color:#fff; font-size: 0.7rem; font-weight: 700; }
+        .ph-ctr button.due { background: #f5c542; color: #1c1c1c; }
+        .ph-updates { display:flex; flex-wrap:wrap; gap: 6px; margin: 6px 0 8px; }
+        .ph-row .ph-updates { margin: 2px 0 2px auto; flex: 1 1 12rem; justify-content: flex-end; }
+        .ph-pill {
+          display:inline-block; margin: 0; padding: 1px 8px; border-radius: 999px;
+          background: color-mix(in srgb, var(--primary-text-color, #eee) 14%, transparent);
+          color: inherit; font-size: 0.7rem; font-weight: 700;
+        }
+        .ph-pill.warn { background: #f5c542; color: #1c1c1c; }
         .ph-note { margin-top: 8px; font-size: 0.8rem; opacity: 0.85; }
         .ph-empty, .ph-err { opacity: 0.7; }
         .ph-err { color: #ff6b6b; opacity: 1; }
         .ph-count { font-variant-numeric: tabular-nums; }
-        .ph-count.warn { color: #f5c542; font-weight: 700; }
+        .ph-count.warn { color: color-mix(in srgb, #f5c542 62%, var(--primary-text-color, #eee)); font-weight: 700; }
       `;
     }
 
@@ -522,7 +573,7 @@
           (s) =>
             `<button type="button" class="ph-row" data-host="${s.id}" data-goto="host">${this._hostFace(
               s,
-              `<span class="ph-host-meta">${s.container_count != null ? esc(s.container_count) + " ctr" : ""}</span>`
+              `<span class="ph-host-meta">${s.container_count != null ? esc(s.container_count) + " containers" : ""}</span>`
             )}</button>`
         )
         .join("");
@@ -569,9 +620,8 @@
       const menuOpen = this._menu === "actions" && menu.length;
       const linkOpen = this._menu === "links" && moreLinks.length;
       return `${strip}
-        <div class="ph-title">${esc(server.name || server.hostname || "Host")}${
-          server.reboot_pending ? `<span class="ph-pill">Reboot pending</span>` : ""
-        }</div>
+        <div class="ph-title">${esc(server.name || server.hostname || "Host")}</div>
+        <div class="ph-updates">${updatePills(server)}</div>
         <div class="ph-sub">${icon(server.os_icon || "mdi:linux")} ${esc(osLabel(server))}</div>
         <div class="ph-actions">
           ${
@@ -641,7 +691,7 @@
         }
         ${
           toggles.length
-            ? `<details class="ph-features"><summary>Features</summary><div class="ph-toggles">${toggles
+            ? `<details class="ph-features" data-section="features"><summary>Features</summary><div class="ph-toggles">${toggles
                 .map(
                   (t) =>
                     `<button type="button" class="ph-tog ${flags[t.flag] ? "on" : ""}" data-flag="${t.flag}">${esc(t.label)}</button>`
@@ -657,13 +707,9 @@
       if (!servers.length) return `<div class="ph-empty">No host in this snapshot</div>`;
       return servers
         .map((s) => {
-          const os = Number(s.os_updates_count || 0);
-          const ctr = Number(s.container_updates_count || 0);
           return `<button type="button" class="ph-row" data-host="${s.id}" data-goto="host">${this._hostFace(
             s,
-            `<span class="ph-host-meta"><span class="ph-count ${os ? "warn" : ""}">${os} OS</span> · <span class="ph-count ${
-              ctr ? "warn" : ""
-            }">${ctr} ctr</span>${s.reboot_pending ? " · reboot" : ""}</span>`
+            `<span class="ph-updates">${updatePills(s)}</span>`
           )}</button>`;
         })
         .join("");
@@ -680,9 +726,11 @@
       const y = window.scrollY;
       if (this._painted) {
         const openNow = [];
-        this.shadowRoot.querySelectorAll("details[open] > summary").forEach((summary) => {
-          const name = (summary.textContent || "").trim();
-          if (name) openNow.push(name);
+        this.shadowRoot.querySelectorAll("details[open]").forEach((details) => {
+          const key =
+            details.getAttribute("data-section") ||
+            ((details.querySelector("summary") || {}).textContent || "").trim();
+          if (key) openNow.push(key);
         });
         this._open = openNow;
       }
@@ -709,9 +757,16 @@
           ${this._note ? `<div class="ph-note">${esc(this._note)}</div>` : ""}
         </div>
       `;
-      this.shadowRoot.querySelectorAll("details > summary").forEach((summary) => {
-        const name = (summary.textContent || "").trim();
-        if (this._open.indexOf(name) !== -1) summary.parentElement.open = true;
+      this.shadowRoot.querySelectorAll("details").forEach((details) => {
+        const key = details.getAttribute("data-section") || "";
+        const legacy = ((details.querySelector("summary") || {}).textContent || "").trim();
+        const open = this._open.some((name) => {
+          if (name === key || name === legacy) return true;
+          if (key === "containers" && String(name).indexOf("Containers") === 0) return true;
+          if (key === "features" && name === "Features") return true;
+          return false;
+        });
+        if (open) details.open = true;
       });
       this._painted = true;
       this._persist();

@@ -206,20 +206,33 @@ def test_container_action_is_one_service():
     assert helpers.container_controls_allowed(["read", "jobs"], {"docker": False}) is False
     assert helpers.container_controls_allowed(["read", "jobs", "feature:os"], {"docker": True}) is False
     assert helpers.container_controls_allowed(["read", "jobs"], {"docker": True}) is True
-    running = helpers.container_action(
+    running = helpers.container_actions(
         {"name": "web", "running": True, "service": "web", "path": "/opt/web"}
     )
-    assert running["job_type"] == "container_stop"
-    assert running["label"] == "Stop"
-    stopped = helpers.container_action(
-        {"name": "web", "running": False, "service": "web", "path": "/opt/web"}
+    assert [row["label"] for row in running] == ["Stop", "Restart"]
+    assert helpers.container_action(
+        {"name": "web", "running": True, "service": "web", "path": "/opt/web"}
+    )["job_type"] == "container_stop"
+    due = helpers.container_actions(
+        {"name": "web", "running": True, "service": "web", "path": "/opt/web", "update": True}
     )
-    assert stopped["job_type"] == "container_start"
+    assert [row["job_type"] for row in due] == [
+        "container_stop",
+        "container_restart",
+        "container_redeploy",
+    ]
+    stopped = helpers.container_actions(
+        {"name": "web", "running": False, "service": "web", "path": "/opt/web", "update": True}
+    )
+    assert [row["label"] for row in stopped] == ["Start", "Update"]
     assert helpers.container_action({"name": "orphan", "running": True, "service": "", "path": ""}) is None
     js = (_ROOT / "www" / "piherder-dashboard-card.js").read_text(encoding="utf-8")
     assert "container_start" in js and "container_stop" in js
+    assert "container_restart" in js and "container_redeploy" in js
+    assert "OS updates" in js and "container updates" in js
+    assert "ph-ctr-name" in js and "data-section=\"containers\"" in js
     assert "data-ctr-act" in js
-    assert "Other containers in the project stay as they are." in js
+    assert "Other containers stay as they are." in js
 
 
 def test_trigger_container_stop_posts_path_and_service():

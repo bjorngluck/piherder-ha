@@ -16,7 +16,7 @@ from .services import async_register_services
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/local/piherder-dashboard-card.js?v=0.4.2"
+_CARD_URL = "/local/piherder-dashboard-card.js?v=0.4.3"
 
 
 class PiHerderCardView(http.HomeAssistantView):
