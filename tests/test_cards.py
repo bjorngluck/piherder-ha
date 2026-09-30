@@ -201,6 +201,50 @@ def test_finished_jobs_skip_the_first_poll():
     assert helpers.finished_job_events(None, current) == []
 
 
+def test_container_action_is_one_service():
+    assert helpers.container_controls_allowed(["read"], {"docker": True}) is False
+    assert helpers.container_controls_allowed(["read", "jobs"], {"docker": False}) is False
+    assert helpers.container_controls_allowed(["read", "jobs", "feature:os"], {"docker": True}) is False
+    assert helpers.container_controls_allowed(["read", "jobs"], {"docker": True}) is True
+    running = helpers.container_action(
+        {"name": "web", "running": True, "service": "web", "path": "/opt/web"}
+    )
+    assert running["job_type"] == "container_stop"
+    assert running["label"] == "Stop"
+    stopped = helpers.container_action(
+        {"name": "web", "running": False, "service": "web", "path": "/opt/web"}
+    )
+    assert stopped["job_type"] == "container_start"
+    assert helpers.container_action({"name": "orphan", "running": True, "service": "", "path": ""}) is None
+    js = (_ROOT / "www" / "piherder-dashboard-card.js").read_text(encoding="utf-8")
+    assert "container_start" in js and "container_stop" in js
+    assert "data-ctr-act" in js
+    assert "Other containers in the project stay as they are." in js
+
+
+def test_trigger_container_stop_posts_path_and_service():
+    async def _run():
+        session = _Session(202, {"job_id": 11, "job_type": "container_stop"})
+        await client.trigger_job(
+            session,
+            "https://ph.example",
+            "ph_x",
+            4,
+            "container_stop",
+            source_filter="/opt/web",
+            service="web",
+        )
+        assert session.calls[0][2] == {
+            "job_type": "container_stop",
+            "source_filter": "/opt/web",
+            "service": "web",
+        }
+        with pytest.raises(client.PiHerderApiError):
+            await client.trigger_job(session, "https://ph.example", "ph_x", 4, "container_start")
+
+    asyncio.run(_run())
+
+
 def test_unknown_job_type_rejected():
     async def _run():
         with pytest.raises(client.PiHerderApiError):

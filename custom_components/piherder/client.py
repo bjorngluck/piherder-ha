@@ -31,6 +31,8 @@ JOB_TYPES = (
     "os_patch",
     "container_patch",
     "host_reboot",
+    "container_start",
+    "container_stop",
 )
 
 FEATURE_FIELDS = ("backup", "os_patch", "docker")
@@ -101,19 +103,33 @@ async def trigger_job(
     server_id: int,
     job_type: str,
     *,
+    source_filter: str | None = None,
+    service: str | None = None,
     verify_ssl: bool = True,
 ) -> dict[str, Any]:
     """POST a job. 202 accepted. 409 returns the job already running. Never SSH."""
     kind = (job_type or "").strip().lower()
     if kind not in JOB_TYPES:
         raise PiHerderApiError(400, f"Unsupported job_type {kind}")
+    body: dict[str, Any] = {"job_type": kind}
+    if kind in ("container_start", "container_stop"):
+        path = (source_filter or "").strip()
+        svc = (service or "").strip()
+        if not path or not svc:
+            raise PiHerderApiError(
+                400, "container start and stop need a compose directory and a service name"
+            )
+        body["source_filter"] = path
+        body["service"] = svc
+    elif source_filter:
+        body["source_filter"] = source_filter
     origin = normalize_base_url(base)
     status, parsed = await _request_json(
         session,
         "post",
         f"{origin}/api/v1/servers/{int(server_id)}/jobs",
         token,
-        body={"job_type": kind},
+        body=body,
         verify_ssl=verify_ssl,
     )
     if not isinstance(parsed, dict):

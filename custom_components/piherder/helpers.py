@@ -193,6 +193,31 @@ def card_actions(scopes: list | None, features: dict | None) -> list[dict[str, A
     return out
 
 
+def container_controls_allowed(scopes: list | None, features: dict | None) -> bool:
+    """Start/stop one compose service. A read token, or Docker off, gets none."""
+    found = {str(s) for s in (scopes or [])}
+    if "jobs" not in found or not scopes_allow_feature(found, "docker"):
+        return False
+    return bool(feature_flags({"features": features or {}}).get("docker"))
+
+
+def container_action(row: dict | None) -> dict[str, str] | None:
+    """One service. No path or service name means no button (orphan or whole project)."""
+    raw = row or {}
+    path = str(raw.get("path") or "").strip()
+    service = str(raw.get("service") or "").strip()
+    if not path or not service:
+        return None
+    running = bool(raw.get("running"))
+    return {
+        "job_type": "container_stop" if running else "container_start",
+        "path": path,
+        "service": service,
+        "name": str(raw.get("name") or service),
+        "label": "Stop" if running else "Start",
+    }
+
+
 def card_toggles(scopes: list | None) -> list[dict[str, str]]:
     """Feature toggles. Shown even when the flag is off, so it can be turned on."""
     found = {str(s) for s in (scopes or [])}

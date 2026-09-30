@@ -39,6 +39,8 @@ def async_register_services(hass: HomeAssistant) -> None:
                 coord.entry.data["token"],
                 int(call.data["server_id"]),
                 str(call.data["job_type"]),
+                source_filter=call.data.get("source_filter"),
+                service=call.data.get("service"),
                 verify_ssl=verify,
             )
         except PiHerderApiError as exc:
@@ -79,6 +81,8 @@ def async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Required("server_id"): vol.Coerce(int),
                 vol.Required("job_type"): vol.In(JOB_TYPES),
+                vol.Optional("source_filter"): str,
+                vol.Optional("service"): str,
             }
         ),
     )

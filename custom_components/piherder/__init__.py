@@ -16,7 +16,7 @@ from .services import async_register_services
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/local/piherder-dashboard-card.js?v=0.4.0"
+_CARD_URL = "/local/piherder-dashboard-card.js?v=0.4.1"
 
 
 class PiHerderCardView(http.HomeAssistantView):
@@ -63,8 +63,26 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> No
         items = resources.async_items() if hasattr(resources, "async_items") else []
         stem = url.split("?")[0]
         for item in items:
-            if str(item.get("url") or "").split("?")[0] == stem:
+            current = str(item.get("url") or "")
+            if current.split("?")[0] != stem:
+                continue
+            if current == url:
                 return
+            item_id = item.get("id")
+            if item_id is None or not hasattr(resources, "async_update_item"):
+                return
+            try:
+                await resources.async_update_item(
+                    item_id, {"resource_type": "module", "url": url}
+                )
+            except Exception:
+                try:
+                    await resources.async_update_item(
+                        item_id, {"res_type": "module", "url": url}
+                    )
+                except Exception:
+                    return
+            return
         try:
             await resources.async_create_item({"resource_type": "module", "url": url})
         except Exception:

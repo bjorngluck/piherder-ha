@@ -478,7 +478,7 @@ def _container_row(coord: PiHerderCoordinator, server_id: int, name: str) -> dic
 
 
 class PiHerderContainerSensor(_HostBase):
-    """One container from the last Docker inventory. Status only — no start/stop."""
+    """One container from the last Docker inventory. The card starts or stops it."""
 
     def __init__(self, coordinator, entry, server_id: int, name: str) -> None:
         super().__init__(coordinator, entry, server_id)

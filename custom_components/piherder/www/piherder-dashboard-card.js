@@ -50,6 +50,20 @@
     return found.has("feature:" + feature);
   }
 
+  function containerControl(scopes, features) {
+    const found = new Set((scopes || []).map(String));
+    if (!found.has("jobs") || !allowFeature(scopes, "docker")) return false;
+    return !!(features || {}).docker;
+  }
+
+  function containersOf(data, serverId) {
+    const hosts = (data && data.inventory) || [];
+    const host = hosts.find((h) => String(h.server_id) === String(serverId));
+    return ((host && host.containers) || [])
+      .slice()
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  }
+
   function actionsFor(scopes, features) {
     const found = new Set((scopes || []).map(String));
     if (!found.has("jobs")) return [];
@@ -266,6 +280,60 @@
       this._render();
     }
 
+    async _container(server, btn) {
+      const act = btn.getAttribute("data-ctr-act") === "stop" ? "stop" : "start";
+      const name = btn.getAttribute("data-ctr-name") || "this container";
+      const host = server.name || server.hostname || "this host";
+      const verb = act === "stop" ? "Stop" : "Start";
+      const text =
+        verb +
+        " " +
+        name +
+        " on " +
+        host +
+        "? This runs docker compose " +
+        act +
+        " for that service. Other containers in the project stay as they are.";
+      if (!window.confirm(text)) return;
+      try {
+        await this._hass.callService("piherder", "trigger_job", {
+          server_id: server.id,
+          job_type: act === "stop" ? "container_stop" : "container_start",
+          source_filter: btn.getAttribute("data-ctr-path"),
+          service: btn.getAttribute("data-ctr-svc"),
+        });
+        this._note = verb + " " + name + " queued";
+      } catch (err) {
+        this._note = String(err.message || err);
+      }
+      this._render();
+    }
+
+    _containers(server) {
+      const rows = containersOf(this._data, server.id);
+      if (!rows.length) return "";
+      const allow = containerControl(this._scopes(), server.features);
+      const body = rows
+        .map((c) => {
+          const name = c.name || c.service || "container";
+          const state = c.running ? "running" : c.state || "exited";
+          const path = String(c.path || "").trim();
+          const service = String(c.service || "").trim();
+          const act = c.running ? "stop" : "start";
+          const btn =
+            allow && path && service
+              ? `<button type="button" data-ctr-act="${act}" data-ctr-path="${esc(path)}" data-ctr-svc="${esc(
+                  service
+                )}" data-ctr-name="${esc(name)}">${c.running ? "Stop" : "Start"}</button>`
+              : "";
+          return `<div class="ph-ctr"><span class="ph-ctr-name">${esc(name)}</span><span class="ph-ctr-state">${esc(
+            state
+          )}</span>${btn}</div>`;
+        })
+        .join("");
+      return `<details class="ph-features"><summary>Containers</summary><div class="ph-ctr-list">${body}</div></details>`;
+    }
+
     async _toggle(server, toggle) {
       const flags = server.features || {};
       const on = !!flags[toggle.flag];
@@ -359,6 +427,13 @@
         .ph-toggles { display:flex; flex-wrap:wrap; gap: 6px; margin-top: 6px; }
         button.ph-tog { background: transparent; color: inherit; border: 1px solid var(--divider-color, #444); border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 0.78rem; cursor: pointer; }
         button.ph-tog.on { border-color: #00a651; color: #00a651; }
+        .ph-ctr { display:flex; align-items:center; gap: 8px; padding: 4px 0; }
+        .ph-ctr-name { font-weight: 650; }
+        .ph-ctr-state { opacity: 0.7; font-size: 0.78rem; margin-right: auto; }
+        .ph-ctr button {
+          border: 0; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 0.75rem; font-weight: 650;
+          cursor: pointer; color: #fff; background: color-mix(in srgb, #00a651 70%, #111);
+        }
         .ph-pill { display:inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background:#e60012; color:#fff; font-size: 0.7rem; font-weight: 700; }
         .ph-note { margin-top: 8px; font-size: 0.8rem; opacity: 0.85; }
         .ph-empty, .ph-err { opacity: 0.7; }
@@ -538,7 +613,8 @@
                 )
                 .join("")}</div></details>`
             : ""
-        }`;
+        }
+        ${this._containers(server)}`;
     }
 
     _updates() {
@@ -623,6 +699,12 @@
             (a) => a.job_type === btn.getAttribute("data-job")
           );
           if (server && action) this._act(server, action);
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-ctr-act]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) this._container(server, btn);
         });
       });
       this.shadowRoot.querySelectorAll("[data-flag]").forEach((btn) => {
