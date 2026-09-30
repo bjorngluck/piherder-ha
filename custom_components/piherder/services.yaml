@@ -1,0 +1,73 @@
+trigger_job:
+  name: Trigger job
+  description: Start a PiHerder job on one host. The token stays on the config entry.
+  fields:
+    server_id:
+      name: Server ID
+      description: PiHerder server id.
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    job_type:
+      name: Job type
+      description: Job the herder should run.
+      required: true
+      selector:
+        select:
+          options:
+            - backup
+            - retention
+            - os_update_check
+            - container_update_check
+            - os_patch
+            - container_patch
+            - host_reboot
+            - container_start
+            - container_stop
+            - container_restart
+            - container_redeploy
+    source_filter:
+      name: Source filter
+      description: Compose directory for a one-service container job. Other jobs may pass an optional source filter.
+      required: false
+      selector:
+        text:
+    service:
+      name: Service
+      description: Compose service name. Required with the compose directory for container start, stop, restart, and redeploy.
+      required: false
+      selector:
+        text:
+
+set_features:
+  name: Set features
+  description: Turn backup, OS patch, or Docker features on or off for one host.
+  fields:
+    server_id:
+      name: Server ID
+      description: PiHerder server id.
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    backup:
+      name: Backup
+      description: Enable or disable backups on this host.
+      required: false
+      selector:
+        boolean:
+    os_patch:
+      name: OS patch
+      description: Enable or disable OS patching on this host.
+      required: false
+      selector:
+        boolean:
+    docker:
+      name: Docker
+      description: Enable or disable Docker management on this host.
+      required: false
+      selector:
+        boolean:
