@@ -807,7 +807,7 @@
           cursor: pointer; color: #fff; background: color-mix(in srgb, #00a651 70%, #111);
         }
         .ph-ctr button.due { background: #f5c542; color: #1c1c1c; }
-        .ph-ctr button.quiet, button.quiet {
+        .ph-ctr button.quiet {
           background: transparent; color: inherit; border: 1px solid var(--divider-color, #444);
         }
         select, .ph-input {
