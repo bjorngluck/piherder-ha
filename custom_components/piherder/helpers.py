@@ -193,6 +193,75 @@ def card_actions(scopes: list | None, features: dict | None) -> list[dict[str, A
     return out
 
 
+def fleet_jail_rel(path: str | None) -> str:
+    """Jail-relative path. Rejects absolute paths and `..` before the request leaves HA."""
+    raw = str(path or "").strip().replace("\\", "/")
+    if "\x00" in raw or raw.startswith("/"):
+        raise ValueError("Path must stay inside the fleet jail")
+    parts = [part for part in raw.split("/") if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        raise ValueError("Path must stay inside the fleet jail")
+    return "/".join(parts)
+
+
+def files_allowed(scopes: list | None) -> bool:
+    """Host Files on the card. The herder still limits this token to the fleet jail."""
+    return "files" in {str(scope) for scope in (scopes or [])}
+
+
+def project_stops(rows: list | None) -> list[dict[str, Any]]:
+    """One compose directory per project. Stop uses that path, not compose down."""
+    seen: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        path = str(row.get("path") or "").strip()
+        if not path:
+            continue
+        name = str(row.get("project") or "").strip() or path.rstrip("/").split("/")[-1]
+        slot = seen.get(path)
+        if slot is None:
+            seen[path] = {"path": path, "project": name, "count": 1}
+        else:
+            slot["count"] = int(slot["count"]) + 1
+    return list(seen.values())
+
+
+def move_projects(rows: list | None) -> list[str]:
+    """Compose project names that can be moved. Paths are not project names."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("project") or "").strip()
+        if not name or name in seen or "/" in name or name.startswith(".."):
+            continue
+        seen.add(name)
+        found.append(name)
+    return found
+
+
+def move_destinations(servers: list | None, source_id: int, scopes: list | None) -> list[dict[str, Any]]:
+    """Other hosts with Docker on, and a token that may run Docker jobs."""
+    if not container_controls_allowed(scopes, {"docker": True}):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in servers or []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            sid = int(row.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if sid == int(source_id):
+            continue
+        if not feature_flags(row).get("docker"):
+            continue
+        out.append({"id": sid, "name": str(row.get("name") or row.get("hostname") or sid)})
+    return out
+
+
 def container_controls_allowed(scopes: list | None, features: dict | None) -> bool:
     """Start/stop one compose service. A read token, or Docker off, gets none."""
     found = {str(s) for s in (scopes or [])}

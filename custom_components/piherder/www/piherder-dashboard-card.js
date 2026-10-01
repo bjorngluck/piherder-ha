@@ -56,6 +56,35 @@
     return !!(features || {}).docker;
   }
 
+  function hasScope(scopes, name) {
+    return new Set((scopes || []).map(String)).has(name);
+  }
+
+  function projectStops(rows) {
+    const seen = new Map();
+    (rows || []).forEach((row) => {
+      const path = String((row && row.path) || "").trim();
+      if (!path) return;
+      const project = String((row && row.project) || "").trim() || path.split("/").filter(Boolean).pop();
+      const slot = seen.get(path) || { path: path, project: project, count: 0 };
+      slot.count += 1;
+      seen.set(path, slot);
+    });
+    return [...seen.values()];
+  }
+
+  function moveProjects(rows) {
+    const seen = new Set();
+    const out = [];
+    (rows || []).forEach((row) => {
+      const name = String((row && row.project) || "").trim();
+      if (!name || seen.has(name) || name.indexOf("/") >= 0 || name.indexOf("..") === 0) return;
+      seen.add(name);
+      out.push(name);
+    });
+    return out;
+  }
+
   function containersOf(data, serverId) {
     const hosts = (data && data.inventory) || [];
     const host = hosts.find((h) => String(h.server_id) === String(serverId));
@@ -172,6 +201,7 @@
       this._selectedId = null;
       this._focusStats = false;
       this._open = [];
+      this._files = {};
       this._restored = false;
       this._painted = false;
     }
@@ -370,11 +400,260 @@
       this._render();
     }
 
+    async _projectStop(server, btn) {
+      const path = btn.getAttribute("data-proj-path") || "";
+      const name = btn.getAttribute("data-proj-name") || path;
+      const host = server.name || server.hostname || "this host";
+      const text =
+        "Stop every service in " +
+        name +
+        " on " +
+        host +
+        "? This runs docker compose stop for that project. It does not remove containers or volumes.";
+      if (!window.confirm(text)) return;
+      try {
+        await this._hass.callService("piherder", "trigger_job", {
+          server_id: server.id,
+          job_type: "docker_stack_stop",
+          source_filter: path,
+          confirm: true,
+        });
+        this._note = "Stop " + name + " queued";
+      } catch (err) {
+        this._note = String(err.message || err);
+      }
+      this._render();
+    }
+
+    async _move(server) {
+      const project = (this.shadowRoot.querySelector("[data-move-project]") || {}).value || "";
+      const dest = Number((this.shadowRoot.querySelector("[data-move-dest]") || {}).value || 0);
+      const destName =
+        ((this.shadowRoot.querySelector("[data-move-dest] option:checked") || {}).textContent || "").trim() ||
+        "the destination";
+      const host = server.name || server.hostname || "this host";
+      if (!project || !dest) return;
+      const text =
+        "Move " +
+        project +
+        " from " +
+        host +
+        " to " +
+        destName +
+        "? This stops the project on the source, copies it, and starts it on the destination. The source is left stopped. A finished Move has no Undo.";
+      if (!window.confirm(text)) return;
+      try {
+        await this._hass.callService("piherder", "start_move", {
+          server_id: server.id,
+          dest_server_id: dest,
+          project: project,
+          confirm: true,
+        });
+        this._note = "Move " + project + " queued";
+      } catch (err) {
+        this._note = String(err.message || err);
+      }
+      this._render();
+    }
+
+    _fileState(serverId) {
+      const key = String(serverId);
+      if (!this._files[key]) this._files[key] = { rel: "", entries: null, text: "", shown: "" };
+      return this._files[key];
+    }
+
+    async _callFiles(service, data) {
+      const res = await this._hass.callService("piherder", service, data, {}, true);
+      return (res && res.response) || res || {};
+    }
+
+    async _loadFiles(server, rel) {
+      const state = this._fileState(server.id);
+      state.rel = rel || "";
+      try {
+        const payload = await this._callFiles("list_files", {
+          server_id: server.id,
+          path: state.rel,
+        });
+        state.entries = payload.entries || [];
+        state.jail = payload.jail || "";
+        this._note = "";
+      } catch (err) {
+        state.entries = [];
+        this._note = String(err.message || err);
+      }
+      this._render();
+    }
+
+    async _readFile(server, rel) {
+      const state = this._fileState(server.id);
+      try {
+        const payload = await this._callFiles("read_file", { server_id: server.id, path: rel });
+        state.shown = rel;
+        state.text = payload.text || "";
+        this._note = "";
+      } catch (err) {
+        this._note = String(err.message || err);
+      }
+      this._render();
+    }
+
+    async _writeFile(server) {
+      const state = this._fileState(server.id);
+      const name = ((this.shadowRoot.querySelector("[data-file-name]") || {}).value || "").trim();
+      const text = (this.shadowRoot.querySelector("[data-file-text]") || {}).value || "";
+      if (!name) return;
+      try {
+        await this._callFiles("write_file", {
+          server_id: server.id,
+          path: state.rel,
+          name: name,
+          text: text,
+        });
+        await this._loadFiles(server, state.rel);
+        this._note = "Saved " + name;
+        this._render();
+      } catch (err) {
+        this._note = String(err.message || err);
+        this._render();
+      }
+    }
+
+    async _mkdirFile(server) {
+      const state = this._fileState(server.id);
+      const name = window.prompt("New folder in the fleet jail");
+      if (!name) return;
+      try {
+        await this._callFiles("mkdir", { server_id: server.id, path: state.rel, name: name.trim() });
+        await this._loadFiles(server, state.rel);
+      } catch (err) {
+        this._note = String(err.message || err);
+        this._render();
+      }
+    }
+
+    async _renameFile(server, src) {
+      const state = this._fileState(server.id);
+      const dest = window.prompt("Rename " + src + " to", src);
+      if (!dest || dest === src) return;
+      try {
+        await this._callFiles("rename_file", {
+          server_id: server.id,
+          path: state.rel,
+          src: src,
+          dest: dest.trim(),
+        });
+        await this._loadFiles(server, state.rel);
+      } catch (err) {
+        this._note = String(err.message || err);
+        this._render();
+      }
+    }
+
+    async _deleteFile(server, rel, name) {
+      const text =
+        "Delete " +
+        name +
+        " inside the fleet jail? This removes one file or an empty directory. It does not delete a directory that still has files.";
+      if (!window.confirm(text)) return;
+      try {
+        await this._callFiles("delete_file", { server_id: server.id, path: rel, confirm: true });
+        const state = this._fileState(server.id);
+        if (state.shown === rel) {
+          state.shown = "";
+          state.text = "";
+        }
+        await this._loadFiles(server, state.rel);
+      } catch (err) {
+        this._note = String(err.message || err);
+        this._render();
+      }
+    }
+
+    _filesPanel(server) {
+      if (!hasScope(this._scopes(), "files")) return "";
+      const state = this._fileState(server.id);
+      const entries = state.entries;
+      const parent = state.rel.indexOf("/") >= 0 ? state.rel.split("/").slice(0, -1).join("/") : "";
+      const rows = (entries || [])
+        .map((entry) => {
+          const name = entry.name || "";
+          const rel = entry.rel || name;
+          const kind = entry.kind || "file";
+          if (entry.escaped) {
+            return `<div class="ph-ctr"><span class="ph-ctr-name">${esc(name)}</span><span class="ph-ctr-state">outside jail</span></div>`;
+          }
+          if (kind === "dir") {
+            return `<div class="ph-ctr"><button type="button" class="quiet" data-file-open="${esc(
+              rel
+            )}">${esc(name)}/</button><button type="button" class="quiet" data-file-rename="${esc(
+              name
+            )}">Rename</button><button type="button" class="quiet" data-file-del="${esc(rel)}" data-file-label="${esc(
+              name
+            )}">Delete</button></div>`;
+          }
+          return `<div class="ph-ctr"><button type="button" class="quiet" data-file-read="${esc(rel)}">${esc(
+            name
+          )}</button><span class="ph-ctr-state">${esc(kind)}</span><button type="button" class="quiet" data-file-rename="${esc(
+            name
+          )}">Rename</button><button type="button" class="quiet" data-file-del="${esc(rel)}" data-file-label="${esc(
+            name
+          )}">Delete</button></div>`;
+        })
+        .join("");
+      const listing =
+        entries == null
+          ? `<button type="button" class="ph-btn quiet" data-file-load>Load fleet jail</button>`
+          : `${state.rel ? `<button type="button" class="quiet" data-file-up="${esc(parent)}">Up</button>` : ""}
+             <div class="ph-sub">${esc(state.rel || "(jail root)")}</div>
+             ${rows || `<div class="ph-empty">Empty directory</div>`}
+             ${
+               state.shown
+                 ? `<pre class="ph-file">${esc(state.text)}</pre>`
+                 : ""
+             }`;
+      return `<details class="ph-features" data-section="files"><summary>Files</summary>
+        <p class="ph-sub">Fleet jail only. Same token scope as the Files API. No console.</p>
+        ${listing}
+        <div class="ph-actions">
+          <button type="button" class="ph-btn quiet" data-file-mkdir>New folder</button>
+          <button type="button" class="ph-btn quiet" data-file-refresh>Refresh</button>
+        </div>
+        <label class="ph-sub">Save a text file here</label>
+        <input class="ph-input" data-file-name placeholder="name.txt" />
+        <textarea class="ph-input" data-file-text rows="4"></textarea>
+        <button type="button" class="ph-btn" data-file-save>Save</button>
+      </details>`;
+    }
+
+    _movePanel(server) {
+      const health = (this._data && this._data.health) || {};
+      if (health.service_migrate !== true) return "";
+      if (!containerControl(this._scopes(), server.features)) return "";
+      const projects = moveProjects(containersOf(this._data, server.id));
+      const dests = (((this._data && this._data.servers) || [])).filter((row) => {
+        if (String(row.id) === String(server.id)) return false;
+        return !!((row.features || {}).docker);
+      });
+      if (!projects.length || !dests.length) return "";
+      return `<details class="ph-features" data-section="move"><summary>Move</summary>
+        <p class="ph-sub">Stops the project on this host, copies it, and starts it on the destination. A finished Move has no Undo.</p>
+        <select data-move-project>${projects
+          .map((name) => `<option value="${esc(name)}">${esc(name)}</option>`)
+          .join("")}</select>
+        <select data-move-dest>${dests
+          .map((row) => `<option value="${row.id}">${esc(row.name || row.hostname || row.id)}</option>`)
+          .join("")}</select>
+        <button type="button" class="ph-btn" data-move>Move</button>
+      </details>`;
+    }
+
     _containers(server) {
       const rows = containersOf(this._data, server.id);
       if (!rows.length) return "";
       const allow = containerControl(this._scopes(), server.features);
       const due = rows.filter((c) => c.update).length;
+      const groups = projectStops(rows);
       const body = rows
         .map((c) => {
           const name = c.name || c.service || "container";
@@ -407,7 +686,22 @@
         })
         .join("");
       const summary = due ? `Containers · ${due === 1 ? "1 update" : due + " updates"}` : "Containers";
-      return `<details class="ph-features" data-section="containers"><summary class="${due ? "due" : ""}">${summary}</summary><div class="ph-ctr-list">${body}</div></details>`;
+      const stops =
+        allow && groups.length
+          ? groups
+              .map(
+                (group) =>
+                  `<div class="ph-ctr"><span class="ph-ctr-name">${esc(group.project)}</span><span class="ph-ctr-state">${
+                    group.count
+                  } in project</span><button type="button" data-proj-stop data-proj-path="${esc(
+                    group.path
+                  )}" data-proj-name="${esc(group.project)}">Stop project</button></div>`
+              )
+              .join("")
+          : "";
+      return `<details class="ph-features" data-section="containers"><summary class="${due ? "due" : ""}">${summary}</summary>${
+        stops ? `<div class="ph-ctr-list">${stops}</div>` : ""
+      }<div class="ph-ctr-list">${body}</div></details>`;
     }
 
     async _toggle(server, toggle) {
@@ -513,6 +807,18 @@
           cursor: pointer; color: #fff; background: color-mix(in srgb, #00a651 70%, #111);
         }
         .ph-ctr button.due { background: #f5c542; color: #1c1c1c; }
+        .ph-ctr button.quiet {
+          background: transparent; color: inherit; border: 1px solid var(--divider-color, #444);
+        }
+        select, .ph-input {
+          display: block; width: 100%; box-sizing: border-box; margin: 6px 0;
+          background: transparent; color: inherit; border: 1px solid var(--divider-color, #444);
+          border-radius: 8px; padding: 6px 8px; font: inherit;
+        }
+        .ph-file {
+          white-space: pre-wrap; max-height: 12rem; overflow: auto; font-size: 0.75rem;
+          border: 1px solid var(--divider-color, #333); border-radius: 8px; padding: 8px;
+        }
         .ph-updates { display:flex; flex-wrap:wrap; gap: 6px; margin: 6px 0 8px; }
         .ph-row .ph-updates { margin: 2px 0 2px auto; flex: 1 1 12rem; justify-content: flex-end; }
         .ph-pill {
@@ -699,7 +1005,9 @@
                 .join("")}</div></details>`
             : ""
         }
-        ${this._containers(server)}`;
+        ${this._containers(server)}
+        ${this._movePanel(server)}
+        ${this._filesPanel(server)}`;
     }
 
     _updates() {
@@ -764,6 +1072,8 @@
           if (name === key || name === legacy) return true;
           if (key === "containers" && String(name).indexOf("Containers") === 0) return true;
           if (key === "features" && name === "Features") return true;
+          if (key === "files" && name === "Files") return true;
+          if (key === "move" && name === "Move") return true;
           return false;
         });
         if (open) details.open = true;
@@ -812,6 +1122,67 @@
         btn.addEventListener("click", () => {
           const server = this._selected();
           if (server) this._container(server, btn);
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-proj-stop]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) this._projectStop(server, btn);
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-move]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) this._move(server);
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-file-load], [data-file-refresh]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) this._loadFiles(server, this._fileState(server.id).rel);
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-file-open], [data-file-up]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          const rel = btn.getAttribute("data-file-open") || btn.getAttribute("data-file-up") || "";
+          if (server) this._loadFiles(server, rel);
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-file-read]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) this._readFile(server, btn.getAttribute("data-file-read"));
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-file-save]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) this._writeFile(server);
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-file-mkdir]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) this._mkdirFile(server);
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-file-rename]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) this._renameFile(server, btn.getAttribute("data-file-rename"));
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-file-del]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const server = this._selected();
+          if (server) {
+            this._deleteFile(
+              server,
+              btn.getAttribute("data-file-del"),
+              btn.getAttribute("data-file-label") || "this file"
+            );
+          }
         });
       });
       this.shadowRoot.querySelectorAll("[data-flag]").forEach((btn) => {

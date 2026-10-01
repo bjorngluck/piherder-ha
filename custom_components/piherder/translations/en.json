@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "PiHerder",
-        "description": "Token needs read. Add jobs and edit for card buttons. IP allowlist the Home Assistant host.",
+        "description": "Token needs read. Add jobs for confirms, files for the fleet jail, and edit for feature toggles. IP allowlist the Home Assistant host.",
         "data": {
           "url": "PiHerder URL",
           "token": "API token",

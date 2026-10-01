@@ -42,6 +42,21 @@ class _Resp:
         return False
 
 
+class _Raw:
+    def __init__(self, status: int, payload: bytes):
+        self.status = status
+        self._payload = payload
+
+    async def read(self):
+        return self._payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_a):
+        return False
+
+
 class _Session:
     def __init__(self, status: int, payload: dict):
         self.status = status
@@ -49,11 +64,21 @@ class _Session:
         self.calls: list[tuple] = []
 
     def post(self, url, **kwargs):
-        self.calls.append(("post", url, kwargs.get("json")))
+        self.calls.append(("post", url, kwargs.get("json"), kwargs.get("data")))
         return _Resp(self.status, self.payload)
 
     def patch(self, url, **kwargs):
-        self.calls.append(("patch", url, kwargs.get("json")))
+        self.calls.append(("patch", url, kwargs.get("json"), kwargs.get("data")))
+        return _Resp(self.status, self.payload)
+
+    def delete(self, url, **kwargs):
+        self.calls.append(("delete", url, kwargs.get("json"), kwargs.get("data")))
+        return _Resp(self.status, self.payload)
+
+    def get(self, url, **kwargs):
+        self.calls.append(("get", url, None, None))
+        if getattr(self, "raw", None) is not None:
+            return _Raw(self.status, self.raw)
         return _Resp(self.status, self.payload)
 
 
@@ -105,7 +130,7 @@ def test_trigger_job_posts_host_reboot_and_os_patch():
         assert out["http_status"] == 202
         assert out["already_active"] is False
         assert session.calls == [
-            ("post", "https://ph.example/api/v1/servers/4/jobs", {"job_type": "host_reboot"})
+            ("post", "https://ph.example/api/v1/servers/4/jobs", {"job_type": "host_reboot"}, None)
         ]
         session = _Session(202, {"job_id": 10, "job_type": "os_patch"})
         await client.trigger_job(session, "https://ph.example/", "ph_x", 4, "os_patch")
@@ -133,6 +158,7 @@ def test_set_features_posts_three_flags():
                 "patch",
                 "https://ph.example/api/v1/servers/4/features",
                 {"backup": True, "os_patch": False, "docker": True},
+                None,
             )
         ]
 
@@ -233,6 +259,12 @@ def test_container_action_is_one_service():
     assert "ph-ctr-name" in js and "data-section=\"containers\"" in js
     assert "data-ctr-act" in js
     assert "Other containers stay as they are." in js
+    assert "docker_stack_stop" in js and "data-proj-stop" in js
+    assert "does not remove containers or volumes." in js
+    assert "start_move" in js and "no Undo" in js
+    assert "list_files" in js and "Fleet jail only" in js
+    assert "docker_stack_down" not in js
+    assert "service_migrate_undo" not in js
 
 
 def test_trigger_container_stop_posts_path_and_service():
@@ -254,6 +286,97 @@ def test_trigger_container_stop_posts_path_and_service():
         }
         with pytest.raises(client.PiHerderApiError):
             await client.trigger_job(session, "https://ph.example", "ph_x", 4, "container_start")
+
+    asyncio.run(_run())
+
+
+def test_project_stop_posts_compose_directory_and_refuses_down():
+    async def _run():
+        session = _Session(202, {"job_id": 12, "job_type": "docker_stack_stop"})
+        await client.trigger_job(
+            session,
+            "https://ph.example",
+            "ph_x",
+            4,
+            "docker_stack_stop",
+            source_filter="/opt/web",
+        )
+        assert session.calls[0][2] == {
+            "job_type": "docker_stack_stop",
+            "source_filter": "/opt/web",
+        }
+        with pytest.raises(client.PiHerderApiError):
+            await client.trigger_job(session, "https://ph.example", "ph_x", 4, "docker_stack_stop")
+        with pytest.raises(client.PiHerderApiError):
+            await client.trigger_job(session, "https://ph.example", "ph_x", 4, "docker_stack_down")
+
+    asyncio.run(_run())
+
+
+def test_move_posts_confirm_and_project_name():
+    async def _run():
+        session = _Session(202, {"job_id": 13, "job_type": "service_migrate", "leftover": "stopped"})
+        await client.start_move(
+            session, "https://ph.example", "ph_x", 4, 8, "web", confirm=True
+        )
+        assert session.calls[0][0:3] == (
+            "post",
+            "https://ph.example/api/v1/servers/4/moves",
+            {"dest_server_id": 8, "project": "web", "confirm": True},
+        )
+        with pytest.raises(client.PiHerderApiError):
+            await client.start_move(session, "https://ph.example", "ph_x", 4, 8, "web", confirm=False)
+        with pytest.raises(client.PiHerderApiError):
+            await client.start_move(session, "https://ph.example", "ph_x", 4, 8, "/opt/web", confirm=True)
+
+    asyncio.run(_run())
+
+
+def test_files_stay_in_the_fleet_jail():
+    assert helpers.files_allowed(["read"]) is False
+    assert helpers.files_allowed(["read", "files"]) is True
+    assert helpers.fleet_jail_rel("stacks/web") == "stacks/web"
+    with pytest.raises(ValueError):
+        helpers.fleet_jail_rel("../secrets")
+    with pytest.raises(ValueError):
+        helpers.fleet_jail_rel("/etc/passwd")
+    stops = helpers.project_stops(
+        [
+            {"name": "web", "path": "/opt/web", "project": "web"},
+            {"name": "db", "path": "/opt/web", "project": "web"},
+            {"name": "other", "path": "/opt/other", "project": "other"},
+        ]
+    )
+    assert stops[0] == {"path": "/opt/web", "project": "web", "count": 2}
+    assert helpers.move_projects([{"project": "web"}, {"project": "/opt/web"}]) == ["web"]
+    dests = helpers.move_destinations(
+        [
+            {"id": 4, "name": "here", "features": {"docker": True}},
+            {"id": 8, "name": "there", "features": {"docker": True}},
+            {"id": 9, "name": "plain", "features": {"docker": False}},
+        ],
+        4,
+        ["read", "jobs"],
+    )
+    assert dests == [{"id": 8, "name": "there"}]
+
+    async def _run():
+        session = _Session(200, {"jail": "/srv/fleet", "rel": "", "entries": []})
+        await client.list_files(session, "https://ph.example", "ph_x", 4, "stacks")
+        assert session.calls[0][1].endswith("/files?p=stacks")
+        with pytest.raises(client.PiHerderApiError):
+            await client.list_files(session, "https://ph.example", "ph_x", 4, "a/../../etc")
+        session = _Session(200, {})
+        session.raw = b"hello"
+        out = await client.read_file(session, "https://ph.example", "ph_x", 4, "stacks/note.txt")
+        assert out["text"] == "hello"
+        with pytest.raises(client.PiHerderApiError):
+            await client.delete_file(session, "https://ph.example", "ph_x", 4, "stacks/note.txt")
+        await client.delete_file(
+            session, "https://ph.example", "ph_x", 4, "stacks/note.txt", confirm=True
+        )
+        assert session.calls[-1][0] == "delete"
+        assert "files?p=stacks/note.txt" in session.calls[-1][1]
 
     asyncio.run(_run())
 

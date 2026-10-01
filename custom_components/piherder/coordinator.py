@@ -41,6 +41,7 @@ class PiHerderCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(exc.message) from exc
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
+        # Poll-diff only. The herder alert webhook is a shared secret with no nonce, so this plugin does not accept it.
         previous = self.data if isinstance(self.data, dict) else None
         for job in finished_job_events(previous, data.get("jobs")):
             self.hass.bus.async_fire(

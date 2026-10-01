@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 try:
     import aiohttp
@@ -35,7 +36,11 @@ JOB_TYPES = (
     "container_stop",
     "container_restart",
     "container_redeploy",
+    "docker_stack_stop",
 )
+
+# Lovelace shows and writes this much. The herder still enforces the fleet jail and its own upload cap.
+CARD_FILE_BYTES = 64 * 1024
 
 FEATURE_FIELDS = ("backup", "os_patch", "docker")
 
@@ -47,6 +52,7 @@ async def _request_json(
     token: str,
     *,
     body: dict | None = None,
+    form: Any = None,
     verify_ssl: bool = True,
 ) -> tuple[int, Any]:
     headers = {
@@ -57,7 +63,9 @@ async def _request_json(
     kwargs: dict[str, Any] = {"headers": headers, "ssl": ssl}
     if aiohttp is not None:
         kwargs["timeout"] = aiohttp.ClientTimeout(total=30)
-    if body is not None:
+    if form is not None:
+        kwargs["data"] = form
+    elif body is not None:
         kwargs["json"] = body
         headers["Content-Type"] = "application/json"
     call = getattr(session, method.lower())
@@ -111,10 +119,17 @@ async def trigger_job(
 ) -> dict[str, Any]:
     """POST a job. 202 accepted. 409 returns the job already running. Never SSH."""
     kind = (job_type or "").strip().lower()
+    if kind in ("docker_stack_down", "docker_stack_remove"):
+        raise PiHerderApiError(400, "Project stop is docker compose stop, not down or remove")
     if kind not in JOB_TYPES:
         raise PiHerderApiError(400, f"Unsupported job_type {kind}")
     body: dict[str, Any] = {"job_type": kind}
-    if kind in ("container_start", "container_stop", "container_restart", "container_redeploy"):
+    if kind == "docker_stack_stop":
+        path = (source_filter or "").strip()
+        if not path:
+            raise PiHerderApiError(400, "Project stop needs the compose directory")
+        body["source_filter"] = path
+    elif kind in ("container_start", "container_stop", "container_restart", "container_redeploy"):
         path = (source_filter or "").strip()
         svc = (service or "").strip()
         if not path or not svc:
@@ -171,6 +186,259 @@ async def set_features(
         return parsed
     detail = parsed.get("detail") if isinstance(parsed, dict) else ""
     raise PiHerderApiError(status, str(detail or "features failed")[:300])
+
+
+async def start_move(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    dest_server_id: int,
+    project: str,
+    *,
+    confirm: bool = False,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """POST a stop-first Move. confirm must be true. No undo. Never SSH."""
+    if confirm is not True:
+        raise PiHerderApiError(400, "Move requires confirm")
+    name = (project or "").strip()
+    if not name or "/" in name or name.startswith(".."):
+        raise PiHerderApiError(400, "Move needs a compose project name")
+    origin = normalize_base_url(base)
+    status, parsed = await _request_json(
+        session,
+        "post",
+        f"{origin}/api/v1/servers/{int(server_id)}/moves",
+        token,
+        body={
+            "dest_server_id": int(dest_server_id),
+            "project": name,
+            "confirm": True,
+        },
+        verify_ssl=verify_ssl,
+    )
+    if not isinstance(parsed, dict):
+        parsed = {}
+    if status in (202, 409):
+        out = dict(parsed)
+        out["http_status"] = status
+        out["already_active"] = status == 409
+        return out
+    detail = parsed.get("detail") if isinstance(parsed, dict) else ""
+    raise PiHerderApiError(status, str(detail or "move failed")[:300])
+
+
+def _file_rel(path: str | None) -> str:
+    try:
+        return _helpers_module().fleet_jail_rel(path)
+    except ValueError as exc:
+        raise PiHerderApiError(400, str(exc)) from exc
+
+
+def _files_url(origin: str, server_id: int, suffix: str, rel: str) -> str:
+    return (
+        f"{origin}/api/v1/servers/{int(server_id)}/files{suffix}?p={quote(rel, safe='/')}"
+    )
+
+
+async def list_files(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    path: str | None = "",
+    *,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """List one fleet-jail directory. The herder refuses paths outside that jail."""
+    origin = normalize_base_url(base)
+    rel = _file_rel(path)
+    data = await _get_json(
+        session, _files_url(origin, server_id, "", rel), token, verify_ssl=verify_ssl
+    )
+    if not isinstance(data, dict):
+        raise PiHerderApiError(500, "files: expected object")
+    return data
+
+
+async def read_file(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    path: str,
+    *,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """Download one fleet-jail file as text, capped for the Lovelace response."""
+    origin = normalize_base_url(base)
+    rel = _file_rel(path)
+    status, raw = await _request_bytes(
+        session,
+        "get",
+        _files_url(origin, server_id, "/download", rel),
+        token,
+        verify_ssl=verify_ssl,
+    )
+    if status >= 400:
+        raise PiHerderApiError(status, _error_text(raw))
+    if len(raw) > CARD_FILE_BYTES:
+        raise PiHerderApiError(400, "File is larger than the card can show")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PiHerderApiError(400, "File is not text. Open it in PiHerder.") from exc
+    return {"path": rel, "text": text, "bytes": len(raw)}
+
+
+async def write_file(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    path: str | None,
+    name: str,
+    text: str,
+    *,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """Upload one text file into a fleet-jail directory."""
+    if aiohttp is None:
+        raise PiHerderApiError(500, "aiohttp is required")
+    origin = normalize_base_url(base)
+    rel = _file_rel(path)
+    filename = (name or "").strip().replace("\\", "/").split("/")[-1]
+    if not filename or filename in (".", ".."):
+        raise PiHerderApiError(400, "File name is required")
+    raw = (text or "").encode("utf-8")
+    if len(raw) > CARD_FILE_BYTES:
+        raise PiHerderApiError(400, "File is larger than the card can write")
+    form = aiohttp.FormData()
+    form.add_field("p", rel)
+    form.add_field("file", raw, filename=filename, content_type="text/plain; charset=utf-8")
+    status, parsed = await _request_json(
+        session,
+        "post",
+        f"{origin}/api/v1/servers/{int(server_id)}/files",
+        token,
+        form=form,
+        verify_ssl=verify_ssl,
+    )
+    if status < 400 and isinstance(parsed, dict):
+        return parsed
+    detail = parsed.get("detail") if isinstance(parsed, dict) else ""
+    raise PiHerderApiError(status, str(detail or "upload failed")[:300])
+
+
+async def mkdir_file(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    path: str | None,
+    name: str,
+    *,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    origin = normalize_base_url(base)
+    status, parsed = await _request_json(
+        session,
+        "post",
+        f"{origin}/api/v1/servers/{int(server_id)}/files/mkdir",
+        token,
+        body={"p": _file_rel(path), "name": (name or "").strip()},
+        verify_ssl=verify_ssl,
+    )
+    if status < 400 and isinstance(parsed, dict):
+        return parsed
+    detail = parsed.get("detail") if isinstance(parsed, dict) else ""
+    raise PiHerderApiError(status, str(detail or "mkdir failed")[:300])
+
+
+async def rename_file(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    path: str | None,
+    src: str,
+    dest: str,
+    *,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    origin = normalize_base_url(base)
+    status, parsed = await _request_json(
+        session,
+        "post",
+        f"{origin}/api/v1/servers/{int(server_id)}/files/rename",
+        token,
+        body={"p": _file_rel(path), "src": (src or "").strip(), "dest": (dest or "").strip()},
+        verify_ssl=verify_ssl,
+    )
+    if status < 400 and isinstance(parsed, dict):
+        return parsed
+    detail = parsed.get("detail") if isinstance(parsed, dict) else ""
+    raise PiHerderApiError(status, str(detail or "rename failed")[:300])
+
+
+async def delete_file(
+    session: aiohttp.ClientSession,
+    base: str,
+    token: str,
+    server_id: int,
+    path: str,
+    *,
+    confirm: bool = False,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """Delete one file or an empty directory inside the fleet jail."""
+    if confirm is not True:
+        raise PiHerderApiError(400, "Delete requires confirm")
+    origin = normalize_base_url(base)
+    rel = _file_rel(path)
+    status, parsed = await _request_json(
+        session,
+        "delete",
+        _files_url(origin, server_id, "", rel),
+        token,
+        verify_ssl=verify_ssl,
+    )
+    if status < 400 and isinstance(parsed, dict):
+        return parsed
+    detail = parsed.get("detail") if isinstance(parsed, dict) else ""
+    raise PiHerderApiError(status, str(detail or "delete failed")[:300])
+
+
+def _error_text(raw: bytes) -> str:
+    text = raw.decode("utf-8", errors="replace")[:300]
+    try:
+        import json
+
+        parsed = json.loads(text)
+        if isinstance(parsed, dict) and parsed.get("detail"):
+            return str(parsed["detail"])[:300]
+    except Exception:
+        pass
+    return text or "error"
+
+
+async def _request_bytes(
+    session: aiohttp.ClientSession,
+    method: str,
+    url: str,
+    token: str,
+    *,
+    verify_ssl: bool = True,
+) -> tuple[int, bytes]:
+    headers = {"Authorization": f"Bearer {token}", "Accept": "*/*"}
+    ssl: bool | None = None if verify_ssl else False
+    kwargs: dict[str, Any] = {"headers": headers, "ssl": ssl}
+    if aiohttp is not None:
+        kwargs["timeout"] = aiohttp.ClientTimeout(total=30)
+    call = getattr(session, method.lower())
+    async with call(url, **kwargs) as resp:
+        return resp.status, await resp.read()
 
 
 async def fetch_health(session: aiohttp.ClientSession, base: str, token: str, *, verify_ssl: bool = True) -> dict:
@@ -263,7 +531,7 @@ async def _optional_object(
     return data if isinstance(data, dict) else {}
 
 
-def _annotate_server(row: dict) -> dict:
+def _helpers_module():
     """Load helpers beside this file so unit tests can import client alone."""
     import importlib.util
     import sys
@@ -278,7 +546,11 @@ def _annotate_server(row: dict) -> dict:
         assert spec is not None and spec.loader is not None
         sys.modules[key] = mod
         spec.loader.exec_module(mod)
-    return mod.annotate_server(row)
+    return mod
+
+
+def _annotate_server(row: dict) -> dict:
+    return _helpers_module().annotate_server(row)
 
 
 def derive_summary(servers: list, jobs: list, *, version: str | None) -> dict[str, Any]:
