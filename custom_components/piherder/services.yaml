@@ -28,9 +28,10 @@ trigger_job:
             - container_stop
             - container_restart
             - container_redeploy
+            - docker_stack_stop
     source_filter:
       name: Source filter
-      description: Compose directory for a one-service container job. Other jobs may pass an optional source filter.
+      description: Compose directory for a one-service container job or for stopping a whole project. Other jobs may pass an optional source filter.
       required: false
       selector:
         text:
@@ -40,6 +41,177 @@ trigger_job:
       required: false
       selector:
         text:
+    confirm:
+      name: Confirm
+      description: Required true for docker_stack_stop. That job is docker compose stop for the project directory. It does not remove containers.
+      required: false
+      selector:
+        boolean:
+
+start_move:
+  name: Start Move
+  description: Stop a compose project on this host, copy it, and start it on another host. A finished Move has no undo. confirm must be true.
+  fields:
+    server_id:
+      name: Source server ID
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    dest_server_id:
+      name: Destination server ID
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    project:
+      name: Compose project
+      description: Project name from the inventory. Not a filesystem path.
+      required: true
+      selector:
+        text:
+    confirm:
+      name: Confirm
+      description: Must be true. The card also asks before it calls this.
+      required: true
+      selector:
+        boolean:
+
+list_files:
+  name: List files
+  description: List one directory in the fleet jail. Needs the files scope.
+  fields:
+    server_id:
+      name: Server ID
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    path:
+      name: Directory
+      description: Path relative to the fleet jail. Empty is the jail root.
+      required: false
+      selector:
+        text:
+
+read_file:
+  name: Read file
+  description: Read one text file in the fleet jail. The card shows at most 64 KiB.
+  fields:
+    server_id:
+      name: Server ID
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    path:
+      name: File
+      description: Path relative to the fleet jail.
+      required: true
+      selector:
+        text:
+
+write_file:
+  name: Write file
+  description: Upload one text file into a fleet-jail directory. At most 64 KiB from the card.
+  fields:
+    server_id:
+      name: Server ID
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    path:
+      name: Directory
+      required: false
+      selector:
+        text:
+    name:
+      name: File name
+      required: true
+      selector:
+        text:
+    text:
+      name: Text
+      required: false
+      selector:
+        text:
+
+mkdir:
+  name: Make directory
+  description: Create one directory in the fleet jail.
+  fields:
+    server_id:
+      name: Server ID
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    path:
+      name: Parent directory
+      required: false
+      selector:
+        text:
+    name:
+      name: Name
+      required: true
+      selector:
+        text:
+
+rename_file:
+  name: Rename file
+  description: Rename one file or directory in the current fleet-jail directory.
+  fields:
+    server_id:
+      name: Server ID
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    path:
+      name: Directory
+      required: false
+      selector:
+        text:
+    src:
+      name: From
+      required: true
+      selector:
+        text:
+    dest:
+      name: To
+      required: true
+      selector:
+        text:
+
+delete_file:
+  name: Delete file
+  description: Delete one file or an empty directory in the fleet jail. confirm must be true. Recursive delete is not available.
+  fields:
+    server_id:
+      name: Server ID
+      required: true
+      selector:
+        number:
+          mode: box
+          step: 1
+    path:
+      name: Path
+      required: true
+      selector:
+        text:
+    confirm:
+      name: Confirm
+      required: true
+      selector:
+        boolean:
 
 set_features:
   name: Set features
