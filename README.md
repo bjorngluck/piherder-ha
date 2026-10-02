@@ -1,7 +1,7 @@
 # PiHerder for Home Assistant
 
 [![Release](https://img.shields.io/badge/plugin-v0.5.0-green.svg)](https://github.com/bjorngluck/piherder-ha/releases)
-[![PiHerder](https://img.shields.io/badge/PiHerder-v1.8.0-blue.svg)](https://github.com/bjorngluck/piherder/blob/v1.8.0/docs/RELEASE_v1.8.0.md)
+[![PiHerder](https://img.shields.io/badge/PiHerder-v1.8.1-blue.svg)](https://github.com/bjorngluck/piherder/blob/v1.8.1/docs/RELEASE_v1.8.1.md)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=fff)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-custom%20integration-orange.svg)](https://github.com/bjorngluck/piherder-ha)
 [![Install guide](https://img.shields.io/badge/wiki-install%20steps-red.svg)](https://piherder-docs.hacknow.info/integrations/home-assistant/)
@@ -10,9 +10,9 @@
 
 HACS integration: Home Assistant **observes** a [PiHerder](https://github.com/bjorngluck/piherder) fleet over `/api/v1`.
 
-This is **not** PiHerder managing HAOS over SSH. That stays in the PiHerder image ([HAOS hosts](https://piherder-docs.hacknow.info/day-to-day/haos-hosts/)). Needs PiHerder **[v1.8.0](https://github.com/bjorngluck/piherder/blob/v1.8.0/docs/RELEASE_v1.8.0.md)** for start, stop, restart, and update of one container. `host_reboot` has been on the herder since **v1.7.0**. An older herder still shows the read-only fleet card.
+This is **not** PiHerder managing HAOS over SSH. That stays in the PiHerder image ([HAOS hosts](https://piherder-docs.hacknow.info/day-to-day/haos-hosts/)). Needs PiHerder **[v1.8.1](https://github.com/bjorngluck/piherder/blob/v1.8.1/docs/RELEASE_v1.8.1.md)** for start, stop, restart, and update of one container. `host_reboot` has been on the herder since **v1.7.0**. An older herder still shows the read-only fleet card.
 
-**Plugin 0.5.0** is this build. HACS lists it only after the **v0.5.0** GitHub Release. A push to `main` without a `v*` tag leaves the previous release in the list. The Updates tab writes **OS updates** and **container updates** in full. A container that needs an image update has a gold name. A running service has **Stop** and **Restart**. A stopped service has **Start**. **Update** pulls and recreates that one service. **Stop project** runs `docker compose stop` for that compose directory. It does not remove containers or volumes. **Move** stops a project on this host, copies it, and starts it on another host. A finished Move has no Undo. **Files** lists, reads, writes, creates, renames, and deletes inside the fleet jail. The card still keeps the tab, the selected host, and open sections when it redraws. It targets PiHerder **[v1.8.0](https://github.com/bjorngluck/piherder/blob/v1.8.0/docs/RELEASE_v1.8.0.md)** for one-service actions, project stop, and Files. Move needs `POST /api/v1/servers/{id}/moves` on the v1.9 herder. A 1.7 herder answers **400** for the one-service jobs. A 404 on `/inventory` or `/services` from an older herder is ignored. [piherder-mcp](https://github.com/bjorngluck/piherder-mcp) does not grow a Move tool.
+**Plugin 0.5.0** is this build. HACS lists it only after the **v0.5.0** GitHub Release. A push to `main` without a `v*` tag leaves the previous release in the list. The Updates tab writes **OS updates** and **container updates** in full. A container that needs an image update has a gold name. A running service has **Stop** and **Restart**. A stopped service has **Start**. **Update** pulls and recreates that one service. **Stop project** runs `docker compose stop` for that compose directory. It does not remove containers or volumes. **Move** stops a project on this host, copies it, and starts it on another host. A finished Move has no Undo. **Files** lists, reads, writes, creates, renames, and deletes inside the fleet jail. The card still keeps the tab, the selected host, and open sections when it redraws. It targets PiHerder **[v1.8.1](https://github.com/bjorngluck/piherder/blob/v1.8.1/docs/RELEASE_v1.8.1.md)** for one-service actions, project stop, and Files. Move needs `POST /api/v1/servers/{id}/moves` on the v1.9 herder. A 1.7 herder answers **400** for the one-service jobs. A 404 on `/inventory` or `/services` from an older herder is ignored. [piherder-mcp](https://github.com/bjorngluck/piherder-mcp) does not grow a Move tool.
 
 The Lovelace card is one module with **Fleet**, **Host**, and **Updates** tabs. A host strip picks the machine (a Raspberry Pi mark and an OS icon). Click memory, disk, or CPU load to open that sensor’s Home Assistant history. **Backup** is the face button. The other confirms are an **Actions** menu. **Containers** on the Host tab lists the last inventory. **Stop** and **Restart** are on a running service. **Start** is on a stopped one. **Update** is on a service with an image update. Each runs `docker compose` for that one service after a confirm. **Stop project** is one button per compose directory and asks first. **Move** is shown only when health says `service_migrate` is on, the token may run Docker jobs, and another host has Docker on. It asks first. **Files** is shown only when the token has `files`. A container with no compose directory or service name has no one-service button. A `read` token shows no job buttons. There is no console. The older card names (`piherder-host-card`, `piherder-updates-card`, `piherder-resources-card`) still load. The HA **device page** has one **Visit** (the host). Sensors include disk %, memory %, CPU load, one sensor per container, and one sensor per monitored service. Poll reads stored snapshots. It never SSHs the fleet. When a job the plugin was watching leaves the active set, Home Assistant gets `piherder_job_completed`.
 
@@ -36,12 +36,12 @@ An automation can call `piherder.trigger_job` without the card dialog. Project s
 
 ## Install
 
-Full steps, with the card resource and what each HA screen means: **[Home Assistant → PiHerder](https://piherder-docs.hacknow.info/integrations/home-assistant/)**. Release: **[PiHerder v1.8.0](https://github.com/bjorngluck/piherder/blob/v1.8.0/docs/RELEASE_v1.8.0.md)**.
+Full steps, with the card resource and what each HA screen means: **[Home Assistant → PiHerder](https://piherder-docs.hacknow.info/integrations/home-assistant/)**. Release: **[PiHerder v1.8.1](https://github.com/bjorngluck/piherder/blob/v1.8.1/docs/RELEASE_v1.8.1.md)**.
 
 1. In PiHerder: Settings → API management → token with **`read`**. Add **`jobs`** for confirms, **`files`** for the fleet jail, and **`edit`** for feature toggles. Add **`feature:docker`** only when this token should be limited to Docker. IP allowlist = this HA host. Token page: [API tokens](https://piherder-docs.hacknow.info/operations/api-tokens/).
 2. HACS → custom repositories → [bjorngluck/piherder-ha](https://github.com/bjorngluck/piherder-ha) → Integration.
 3. Add **PiHerder**: base URL, `ph_…` token, TLS verify, poll interval. Wrong URL/token keeps the form filled.
-4. Confirm fleet **Plugin** is **0.5.0**. The fleet **Version** sensor is the PiHerder app (**1.8.0** until that herder is tagged).
+4. Confirm fleet **Plugin** is **0.5.0**. The fleet **Version** sensor is the PiHerder app (**1.8.1**).
 
 HACS does **not** auto-refresh custom repos. Pick **v0.5.0**, then **restart Home Assistant**. Reload of the config entry does not replace the card file.
 
@@ -75,7 +75,7 @@ server_id: 1
 
 “Custom element doesn’t exist” = stale resource URL, resource type is JavaScript instead of module, or HA was not restarted after Redownload.
 
-CPU, memory, and disk numbers come from PiHerder **[System Info](https://piherder-docs.hacknow.info/day-to-day/system-info/)** (a stored host snapshot, not live SSH). Recreate PiHerder **web** on **1.8.0**, then the System Info refresh icon (or wait ~15 minutes). Empty bars mean the herder has no snapshot yet. Click a stat to open Home Assistant’s history for that sensor. The thin sparkline uses the same history.
+CPU, memory, and disk numbers come from PiHerder **[System Info](https://piherder-docs.hacknow.info/day-to-day/system-info/)** (a stored host snapshot, not live SSH). Recreate PiHerder **web** on **1.8.1**, then the System Info refresh icon (or wait ~15 minutes). Empty bars mean the herder has no snapshot yet. Click a stat to open Home Assistant’s history for that sensor. The thin sparkline uses the same history.
 
 ## Test plan
 
@@ -89,7 +89,7 @@ CPU, memory, and disk numbers come from PiHerder **[System Info](https://piherde
 
 | Topic | Page |
 |-------|------|
-| PiHerder v1.8.0 | [Notes](https://github.com/bjorngluck/piherder/blob/v1.8.0/docs/RELEASE_v1.8.0.md). Tag [v1.8.0](https://github.com/bjorngluck/piherder/releases/tag/v1.8.0). Prior: [v1.7.0](https://github.com/bjorngluck/piherder/releases/tag/v1.7.0) |
+| PiHerder v1.8.1 | [Notes](https://github.com/bjorngluck/piherder/blob/v1.8.1/docs/RELEASE_v1.8.1.md). Tag [v1.8.1](https://github.com/bjorngluck/piherder/releases/tag/v1.8.1). Prior: [v1.8.0](https://github.com/bjorngluck/piherder/releases/tag/v1.8.0) |
 | Install, cards, Visit | [Home Assistant → PiHerder](https://piherder-docs.hacknow.info/integrations/home-assistant/) |
 | Why CPU/memory/disk are stored | [System Info](https://piherder-docs.hacknow.info/day-to-day/system-info/) |
 | `read` token and allowlist | [API tokens](https://piherder-docs.hacknow.info/operations/api-tokens/) |
