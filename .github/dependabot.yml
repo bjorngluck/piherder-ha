@@ -1,0 +1,15 @@
+# Security updates for this repository.
+# Version-update pull requests stay off. Security-update pull requests are
+# not subject to that limit. The file applies on the default branch.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
