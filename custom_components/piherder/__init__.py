@@ -91,13 +91,11 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> No
         return
 
 
-async def _async_register_frontend(hass: HomeAssistant) -> None:
-    if hass.data.get(_WWW_FLAG):
-        return
-    hass.data[_WWW_FLAG] = True
-    hass.http.register_view(PiHerderCardView)
-    www = Path(__file__).parent / "www"
-    dest_dir = Path(hass.config.path("www"))
+def copy_frontend_files(www: Path, dest_dir: Path) -> None:
+    """Copy the card and logo into config/www.
+
+    Blocking file I/O. Callers on the event loop must run this in an executor.
+    """
     dest_dir.mkdir(parents=True, exist_ok=True)
     (dest_dir / "piherder-dashboard-card.js").write_text(
         (www / "piherder-dashboard-card.js").read_text(encoding="utf-8"),
@@ -106,6 +104,16 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     logo = www / "piherder-logo.png"
     if logo.is_file():
         (dest_dir / "piherder-logo.png").write_bytes(logo.read_bytes())
+
+
+async def _async_register_frontend(hass: HomeAssistant) -> None:
+    if hass.data.get(_WWW_FLAG):
+        return
+    hass.data[_WWW_FLAG] = True
+    hass.http.register_view(PiHerderCardView)
+    www = Path(__file__).parent / "www"
+    dest_dir = Path(hass.config.path("www"))
+    await hass.async_add_executor_job(copy_frontend_files, www, dest_dir)
     hass.data.setdefault("frontend_extra_module_url", set()).add(_CARD_URL)
     try:
         frontend.add_extra_js_url(hass, _CARD_URL)
