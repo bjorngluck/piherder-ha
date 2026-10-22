@@ -5,7 +5,7 @@
 | Version | Support |
 |---------|---------|
 | **0.5.x** | Current HACS release |
-| **0.4.x and older** | Upgrade to **0.5.1** |
+| **0.4.x and older** | Upgrade to **0.5.2** |
 
 ## Reporting a vulnerability
 
