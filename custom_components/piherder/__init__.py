@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aiohttp import web
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.components import frontend, http, websocket_api
+from homeassistant.components import frontend, websocket_api
+from homeassistant.components.http import StaticPathConfig
 import voluptuous as vol
 
 from .const import DOMAIN
@@ -16,25 +16,11 @@ from .services import async_register_services
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/local/piherder-dashboard-card.js?v=0.5.1"
-
-
-class PiHerderCardView(http.HomeAssistantView):
-    """Serve the Lovelace module without auth (same origin as extra_js)."""
-
-    url = "/api/piherder/piherder-dashboard-card.js"
-    name = "api:piherder:card"
-    requires_auth = False
-
-    async def get(self, request):
-        path = Path(__file__).parent / "www" / "piherder-dashboard-card.js"
-        return web.FileResponse(
-            path,
-            headers={
-                "Content-Type": "application/javascript; charset=utf-8",
-                "Cache-Control": "no-cache",
-            },
-        )
+_CARD_URL = "/piherder/piherder-dashboard-card.js?v=0.5.2"
+_LEGACY_CARD_STEMS = (
+    "/local/piherder-dashboard-card.js",
+    "/api/piherder/piherder-dashboard-card.js",
+)
 
 
 @websocket_api.websocket_command({vol.Required("type"): "piherder/snapshot"})
@@ -61,14 +47,11 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> No
         if getattr(resources, "loaded", True) is False:
             await resources.async_load()
         items = resources.async_items() if hasattr(resources, "async_items") else []
-        stem = url.split("?")[0]
-        for item in items:
-            current = str(item.get("url") or "")
-            if current.split("?")[0] != stem:
-                continue
-            if current == url:
-                return
-            item_id = item.get("id")
+        action, item = card_resource_action(items, url)
+        if action == "keep":
+            return
+        if action == "update":
+            item_id = item.get("id") if item else None
             if item_id is None or not hasattr(resources, "async_update_item"):
                 return
             try:
@@ -91,30 +74,35 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> No
         return
 
 
-def copy_frontend_files(www: Path, dest_dir: Path) -> None:
-    """Copy the card and logo into config/www.
+def card_resource_action(items: list, url: str) -> tuple[str, dict | None]:
+    """Pick keep, update, or create for the Lovelace card resource.
 
-    Blocking file I/O. Callers on the event loop must run this in an executor.
+    An existing /local or /api/piherder card URL is updated in place so the
+    dashboard does not keep a second module that no longer exists.
     """
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    (dest_dir / "piherder-dashboard-card.js").write_text(
-        (www / "piherder-dashboard-card.js").read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    logo = www / "piherder-logo.png"
-    if logo.is_file():
-        (dest_dir / "piherder-logo.png").write_bytes(logo.read_bytes())
+    stem = url.split("?")[0]
+    update_item = None
+    for item in items:
+        current = str(item.get("url") or "")
+        if current == url:
+            return "keep", None
+        current_stem = current.split("?")[0]
+        if update_item is None and (
+            current_stem == stem or current_stem in _LEGACY_CARD_STEMS
+        ):
+            update_item = item
+    if update_item is not None:
+        return "update", update_item
+    return "create", None
 
 
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     if hass.data.get(_WWW_FLAG):
         return
     hass.data[_WWW_FLAG] = True
-    hass.http.register_view(PiHerderCardView)
-    www = Path(__file__).parent / "www"
-    dest_dir = Path(hass.config.path("www"))
-    await hass.async_add_executor_job(copy_frontend_files, www, dest_dir)
-    hass.data.setdefault("frontend_extra_module_url", set()).add(_CARD_URL)
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig("/piherder", str(Path(__file__).parent / "www"), True)]
+    )
     try:
         frontend.add_extra_js_url(hass, _CARD_URL)
     except Exception:

@@ -1053,7 +1053,7 @@
         <style>${this._styles()}</style>
         <div class="ph">
           <div class="ph-head">
-            <img class="ph-logo" src="/local/piherder-logo.png" alt="" width="36" height="36" />
+            <img class="ph-logo" src="/piherder/piherder-logo.png" alt="" width="36" height="36" />
             <div>
               <div class="ph-title">PiHerder</div>
               <div class="ph-sub">${titles[this._tab] || "Fleet"}</div>
