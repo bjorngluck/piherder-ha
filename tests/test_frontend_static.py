@@ -95,3 +95,7 @@ def test_register_frontend_serves_the_integration_folder():
     assert '"version": "0.5.2"' in _MANIFEST.read_text(encoding="utf-8")
     assert '"frontend"' in _MANIFEST.read_text(encoding="utf-8")
     assert '"homeassistant": "2024.7.0"' in _HACS.read_text(encoding="utf-8")
+    readme = (_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Home%20Assistant-2024.7%2B" in readme
+    assert "release-20247" in readme
+    assert "Home Assistant **2024.7** or newer" in readme
