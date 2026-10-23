@@ -6,7 +6,7 @@ from pathlib import Path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.components import frontend, websocket_api
+from homeassistant.components import websocket_api
 from homeassistant.components.http import StaticPathConfig
 import voluptuous as vol
 
@@ -16,7 +16,7 @@ from .services import async_register_services
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/piherder/piherder-dashboard-card.js?v=0.5.2"
+_CARD_URL = "/piherder/piherder-dashboard-card.js?v=0.5.3"
 _LEGACY_CARD_STEMS = (
     "/local/piherder-dashboard-card.js",
     "/api/piherder/piherder-dashboard-card.js",
@@ -103,10 +103,10 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths(
         [StaticPathConfig("/piherder", str(Path(__file__).parent / "www"), True)]
     )
-    try:
-        frontend.add_extra_js_url(hass, _CARD_URL)
-    except Exception:
-        pass
+    # Lovelace resource only. An extra frontend module runs before Home
+    # Assistant 2026.8 installs its custom element registry, so the card
+    # would define itself in the wrong registry and the dashboard would
+    # not find it.
     websocket_api.async_register_command(hass, ws_snapshot)
     await _async_register_lovelace_resource(hass, _CARD_URL)
 

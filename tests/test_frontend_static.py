@@ -9,7 +9,7 @@ _INIT = _ROOT / "custom_components" / "piherder" / "__init__.py"
 _CARD = _ROOT / "custom_components" / "piherder" / "www" / "piherder-dashboard-card.js"
 _MANIFEST = _ROOT / "custom_components" / "piherder" / "manifest.json"
 _HACS = _ROOT / "hacs.json"
-_URL = "/piherder/piherder-dashboard-card.js?v=0.5.2"
+_URL = "/piherder/piherder-dashboard-card.js?v=0.5.3"
 
 
 def _action():
@@ -37,6 +37,14 @@ def test_new_url_is_kept():
     decision, item = action([{"id": "a", "url": _URL}], _URL)
     assert decision == "keep"
     assert item is None
+
+
+def test_previous_piherder_query_is_updated_in_place():
+    action = _action()
+    old = {"id": "a", "url": "/piherder/piherder-dashboard-card.js?v=0.5.2"}
+    decision, item = action([old], _URL)
+    assert decision == "update"
+    assert item is old
 
 
 def test_local_resource_is_updated_in_place():
@@ -85,14 +93,14 @@ def test_register_frontend_serves_the_integration_folder():
         in register
     )
     assert "async_register_static_paths" in register
-    assert "frontend.add_extra_js_url" in register
+    assert "add_extra_js_url(" not in text
     assert "copy_frontend_files" not in text
     assert "PiHerderCardView" not in text
     assert "frontend_extra_module_url" not in text
     assert 'config.path("www")' not in text
     assert "/local/piherder-logo.png" not in _CARD.read_text(encoding="utf-8")
     assert "/piherder/piherder-logo.png" in _CARD.read_text(encoding="utf-8")
-    assert '"version": "0.5.2"' in _MANIFEST.read_text(encoding="utf-8")
+    assert '"version": "0.5.3"' in _MANIFEST.read_text(encoding="utf-8")
     assert '"frontend"' in _MANIFEST.read_text(encoding="utf-8")
     assert '"homeassistant": "2024.7.0"' in _HACS.read_text(encoding="utf-8")
     readme = (_ROOT / "README.md").read_text(encoding="utf-8")
