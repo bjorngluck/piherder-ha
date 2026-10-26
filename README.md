@@ -1,7 +1,7 @@
 # PiHerder for Home Assistant
 
 [![Release](https://img.shields.io/badge/plugin-v0.5.3-green.svg)](https://github.com/bjorngluck/piherder-ha/releases/tag/v0.5.3)
-[![PiHerder](https://img.shields.io/badge/PiHerder-v1.12.1-blue.svg)](https://github.com/bjorngluck/piherder/blob/v1.12.1/docs/RELEASE_v1.12.1.md)
+[![PiHerder](https://img.shields.io/badge/PiHerder-v1.13.0-blue.svg)](https://github.com/bjorngluck/piherder/blob/v1.13.0/docs/RELEASE_v1.13.0.md)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.7%2B-41BDF5?logo=home-assistant&logoColor=fff)](https://www.home-assistant.io/blog/2024/07/03/release-20247/)
 [![HACS](https://img.shields.io/badge/HACS-custom%20integration-orange.svg)](https://github.com/bjorngluck/piherder-ha)
 [![Install guide](https://img.shields.io/badge/wiki-install%20steps-red.svg)](https://piherder-docs.hacknow.info/integrations/home-assistant/)
