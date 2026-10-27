@@ -9,7 +9,7 @@ _INIT = _ROOT / "custom_components" / "piherder" / "__init__.py"
 _CARD = _ROOT / "custom_components" / "piherder" / "www" / "piherder-dashboard-card.js"
 _MANIFEST = _ROOT / "custom_components" / "piherder" / "manifest.json"
 _HACS = _ROOT / "hacs.json"
-_URL = "/piherder/piherder-dashboard-card.js?v=0.5.3"
+_URL = "/piherder/piherder-dashboard-card.js?v=0.5.4"
 
 
 def _action():
@@ -100,7 +100,7 @@ def test_register_frontend_serves_the_integration_folder():
     assert 'config.path("www")' not in text
     assert "/local/piherder-logo.png" not in _CARD.read_text(encoding="utf-8")
     assert "/piherder/piherder-logo.png" in _CARD.read_text(encoding="utf-8")
-    assert '"version": "0.5.3"' in _MANIFEST.read_text(encoding="utf-8")
+    assert '"version": "0.5.4"' in _MANIFEST.read_text(encoding="utf-8")
     assert '"frontend"' in _MANIFEST.read_text(encoding="utf-8")
     assert '"homeassistant": "2024.7.0"' in _HACS.read_text(encoding="utf-8")
     readme = (_ROOT / "README.md").read_text(encoding="utf-8")

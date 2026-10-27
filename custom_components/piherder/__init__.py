@@ -16,7 +16,7 @@ from .services import async_register_services
 
 PLATFORMS = [Platform.SENSOR]
 _WWW_FLAG = f"{DOMAIN}_www"
-_CARD_URL = "/piherder/piherder-dashboard-card.js?v=0.5.3"
+_CARD_URL = "/piherder/piherder-dashboard-card.js?v=0.5.4"
 _LEGACY_CARD_STEMS = (
     "/local/piherder-dashboard-card.js",
     "/api/piherder/piherder-dashboard-card.js",
