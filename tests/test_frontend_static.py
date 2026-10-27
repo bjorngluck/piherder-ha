@@ -107,3 +107,12 @@ def test_register_frontend_serves_the_integration_folder():
     assert "Home%20Assistant-2024.7%2B" in readme
     assert "release-20247" in readme
     assert "Home Assistant **2024.7** or newer" in readme
+
+
+def test_brand_files_live_only_under_brand():
+    domain = _ROOT / "custom_components" / "piherder"
+    for name in ("icon.png", "icon@2x.png", "logo.png", "logo@2x.png"):
+        assert not (domain / name).exists()
+    brand = domain / "brand"
+    for name in ("icon.png", "logo.png", "dark_icon.png", "dark_logo.png"):
+        assert (brand / name).is_file()
