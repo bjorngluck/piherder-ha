@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/badge/plugin-v0.5.4-green.svg)](https://github.com/bjorngluck/piherder-ha/releases/tag/v0.5.4)
 [![PiHerder](https://img.shields.io/badge/PiHerder-v1.13.0-blue.svg)](https://github.com/bjorngluck/piherder/blob/v1.13.0/docs/RELEASE_v1.13.0.md)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.7%2B-41BDF5?logo=home-assistant&logoColor=fff)](https://www.home-assistant.io/blog/2024/07/03/release-20247/)
-[![HACS](https://img.shields.io/badge/HACS-custom%20integration-orange.svg)](https://github.com/bjorngluck/piherder-ha)
+[![HACS](https://img.shields.io/badge/HACS-Default-orange.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=bjorngluck&repository=piherder-ha&category=integration)
 [![Install guide](https://img.shields.io/badge/wiki-install%20steps-red.svg)](https://piherder-docs.hacknow.info/integrations/home-assistant/)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%231EAEDB?logo=githubsponsors&logoColor=fff&style=flat)](https://github.com/sponsors/bjorngluck)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=black&style=flat)](https://www.buymeacoffee.com/bjorngluck)
@@ -39,11 +39,11 @@ An automation can call `piherder.trigger_job` without the card dialog. Project s
 Full steps, with the card resource and what each HA screen means: **[Home Assistant → PiHerder](https://piherder-docs.hacknow.info/integrations/home-assistant/)**. Release: **[PiHerder v1.12.1](https://github.com/bjorngluck/piherder/blob/v1.12.1/docs/RELEASE_v1.12.1.md)**. Home Assistant **2024.7** or newer.
 
 1. In PiHerder: Settings → API management → token with **`read`**. Add **`jobs`** for confirms, **`files`** for the fleet jail, and **`edit`** for feature toggles. Add **`feature:docker`** only when this token should be limited to Docker. IP allowlist = this HA host. Token page: [API tokens](https://piherder-docs.hacknow.info/operations/api-tokens/).
-2. HACS → custom repositories → [bjorngluck/piherder-ha](https://github.com/bjorngluck/piherder-ha) → Integration.
+2. HACS → Integrations → PiHerder.
 3. Add **PiHerder**: base URL, `ph_…` token, TLS verify, poll interval. Wrong URL/token keeps the form filled.
 4. Confirm fleet **Plugin** is **0.5.4**. The fleet **Version** sensor is the PiHerder app (**1.12.1** on the v1.12.1 image).
 
-HACS does **not** auto-refresh custom repos. Pick **v0.5.4**, then **restart Home Assistant**. Reload of the config entry does not replace a cached card.
+After a new GitHub Release, open HACS → Integrations → PiHerder → Redownload and pick **v0.5.4**, then **restart Home Assistant**. Reload of the config entry does not replace a cached card.
 
 ## Fleet card
 
