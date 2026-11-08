@@ -107,6 +107,10 @@ def test_register_frontend_serves_the_integration_folder():
     assert "Home%20Assistant-2024.7%2B" in readme
     assert "release-20247" in readme
     assert "Home Assistant **2024.7** or newer" in readme
+    assert "HACS-Default" in readme
+    assert "HACS → Integrations → PiHerder" in readme
+    assert "custom repositories" not in readme
+    assert "custom repos" not in readme
 
 
 def test_brand_files_live_only_under_brand():
